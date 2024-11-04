@@ -13,9 +13,19 @@ class ShiftStore extends Model
 
     protected $casts = [
         'name' => 'string',
-        'shift_start_time' => 'datetime:H:i:s',
-        'shift_end_time' => 'datetime:H:i:s',
+        'shift_start_time' => 'string',
+        'shift_end_time' => 'string',
     ];
+
+    public function getShiftStartTimeAttribute($value)
+    {
+        return date('H:i:s', strtotime($value));
+    }
+
+    public function getShiftEndTimeAttribute($value)
+    {
+        return date('H:i:s', strtotime($value));
+    }
 
     public function presences()
     {
