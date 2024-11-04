@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\api\AuthController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\api\LeaveController;
 use App\Http\Controllers\api\PresenceController;
 use Illuminate\Support\Facades\Route;
