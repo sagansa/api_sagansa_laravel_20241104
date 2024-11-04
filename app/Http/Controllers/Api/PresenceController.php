@@ -75,9 +75,9 @@ class PresenceController extends Controller
 
     private function formatPresence($presence)
     {
-        // Ambil waktu check-in dan check-out dalam format Carbon lengkap
-        $checkInDateTime = Carbon::parse($presence->check_in);
-        $checkOutDateTime = $presence->check_out ? Carbon::parse($presence->check_out) : null;
+        // Parse dan set timezone untuk check in/out
+        $checkInDateTime = Carbon::parse($presence->check_in)->timezone('Asia/Jakarta');
+        $checkOutDateTime = $presence->check_out ? Carbon::parse($presence->check_out)->timezone('Asia/Jakarta') : null;
 
         // Ambil jadwal shift
         $shiftStartTime = $presence->shiftStore ? $presence->shiftStore->shift_start_time : null;
@@ -88,10 +88,9 @@ class PresenceController extends Controller
         $lateMinutes = null;
 
         if ($shiftStartTime) {
-            // Gabungkan tanggal check-in dengan waktu mulai shift untuk mendapatkan deadline check-in
-            $shiftStartDateTime = Carbon::parse($checkInDateTime->format('Y-m-d') . ' ' . $shiftStartTime);
+            $shiftStartDateTime = Carbon::parse($checkInDateTime->format('Y-m-d') . ' ' . $shiftStartTime)
+                ->timezone('Asia/Jakarta');
 
-            // Bandingkan waktu check-in dengan waktu mulai shift
             if ($checkInDateTime->isAfter($shiftStartDateTime)) {
                 $checkInStatus = 'terlambat';
                 $lateMinutes = $checkInDateTime->diffInMinutes($shiftStartDateTime);
@@ -104,7 +103,8 @@ class PresenceController extends Controller
         $checkOutStatus = null;
         if ($shiftEndTime && $checkOutDateTime) {
             // Gabungkan tanggal check-in dengan waktu selesai shift
-            $shiftEndDateTime = Carbon::parse($checkInDateTime->format('Y-m-d') . ' ' . $shiftEndTime);
+            $shiftEndDateTime = Carbon::parse($checkInDateTime->format('Y-m-d') . ' ' . $shiftEndTime)
+                ->timezone('Asia/Jakarta');
 
             // Jika shift berakhir di hari berikutnya (misal shift malam)
             if ($shiftEndTime < $shiftStartTime) {
@@ -112,7 +112,8 @@ class PresenceController extends Controller
             }
 
             // Tambah toleransi 3 jam untuk checkout
-            $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3);
+            $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3)
+                ->timezone('Asia/Jakarta');
 
             if ($checkOutDateTime->isBefore($shiftEndDateTime)) {
                 $checkOutStatus = 'pulang_cepat';
@@ -123,13 +124,15 @@ class PresenceController extends Controller
             }
         } elseif ($shiftEndTime && !$checkOutDateTime) {
             // Jika belum checkout, cek apakah sudah lewat batas waktu
-            $shiftEndDateTime = Carbon::parse($checkInDateTime->format('Y-m-d') . ' ' . $shiftEndTime);
+            $shiftEndDateTime = Carbon::parse($checkInDateTime->format('Y-m-d') . ' ' . $shiftEndTime)
+                ->timezone('Asia/Jakarta');
             if ($shiftEndTime < $shiftStartTime) {
                 $shiftEndDateTime->addDay();
             }
 
             // Tambah toleransi 3 jam
-            $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3);
+            $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3)
+                ->timezone('Asia/Jakarta');
 
             if (Carbon::now()->isAfter($checkoutDeadline)) {
                 $checkOutStatus = 'tidak_absen';
@@ -138,12 +141,13 @@ class PresenceController extends Controller
             }
         }
 
+        // Format response dengan waktu lokal
         return [
             'store' => $presence->store ? $presence->store->nickname : null,
             'shift_store' => $presence->shiftStore ? $presence->shiftStore->name : null,
             'status' => $presence->status,
-            'check_in' => $presence->check_in,
-            'check_out' => $presence->check_out,
+            'check_in' => $checkInDateTime->format('Y-m-d H:i:s'),  // Format waktu lokal
+            'check_out' => $checkOutDateTime ? $checkOutDateTime->format('Y-m-d H:i:s') : null,
             'latitude_in' => $presence->latitude_in,
             'longitude_in' => $presence->longitude_in,
             'latitude_out' => $presence->latitude_out,
@@ -152,9 +156,9 @@ class PresenceController extends Controller
             'shift_end_time' => $shiftEndTime,
             'check_in_status' => $checkInStatus,
             'check_out_status' => $checkOutStatus,
-            'late_minutes' => $lateMinutes, // menambahkan informasi keterlambatan dalam menit
-            'shift_end_datetime' => $shiftEndDateTime ? $shiftEndDateTime->format('Y-m-d H:i:s') : null,
-            'checkout_deadline' => isset($checkoutDeadline) ? $checkoutDeadline->format('Y-m-d H:i:s') : null,
+            'late_minutes' => $lateMinutes,
+            'shift_end_datetime' => $shiftEndDateTime ? $shiftEndDateTime->timezone('Asia/Jakarta')->format('Y-m-d H:i:s') : null,
+            'checkout_deadline' => isset($checkoutDeadline) ? $checkoutDeadline->timezone('Asia/Jakarta')->format('Y-m-d H:i:s') : null,
         ];
     }
 
