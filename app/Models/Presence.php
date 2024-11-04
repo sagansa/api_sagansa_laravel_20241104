@@ -30,9 +30,4 @@ class Presence extends Model
     {
         return $this->belongsTo(ShiftStore::class, 'shift_store_id');
     }
-
-    public function storeOut()
-    {
-        return $this->belongsTo(Store::class, 'store_out_id');
-    }
 }

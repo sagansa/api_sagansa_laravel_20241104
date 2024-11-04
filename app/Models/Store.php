@@ -11,6 +11,13 @@ class Store extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'latitude' => 'float',
+        'longitude' => 'float',
+        'radius' => 'float',
+        'status' => 'integer'
+    ];
+
     public function user()
     {
         return $this->belongsTo(User::class);

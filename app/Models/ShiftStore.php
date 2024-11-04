@@ -11,6 +11,12 @@ class ShiftStore extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'name' => 'string',
+        'shift_start_time' => 'datetime:H:i:s',
+        'shift_end_time' => 'datetime:H:i:s',
+    ];
+
     public function presences()
     {
         return $this->hasMany(Presence::class);
