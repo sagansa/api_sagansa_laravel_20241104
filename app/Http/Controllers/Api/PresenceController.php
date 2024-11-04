@@ -23,7 +23,7 @@ class PresenceController extends Controller
         // Jika masih dalam rentang toleransi (sebelum jam 3 pagi)
         if ($now->lt($toleranceEnd)) {
             $yesterday = Carbon::yesterday();
-            $todayPresence = Presence::with(['store', 'shiftStore', 'storeOut'])
+            $todayPresence = Presence::with(['store', 'shiftStore'])
                 ->where('created_by_id', $user->id)
                 ->whereDate('check_in', $yesterday)
                 ->whereNull('check_out')
@@ -31,21 +31,21 @@ class PresenceController extends Controller
 
             // Jika tidak ada presensi hari kemarin yang belum checkout, cek hari ini
             if (!$todayPresence) {
-                $todayPresence = Presence::with(['store', 'shiftStore', 'storeOut'])
+                $todayPresence = Presence::with(['store', 'shiftStore'])
                     ->where('created_by_id', $user->id)
                     ->whereDate('check_in', $today)
                     ->first();
             }
         } else {
             // Di luar toleransi, ambil presensi hari ini
-            $todayPresence = Presence::with(['store', 'shiftStore', 'storeOut'])
+            $todayPresence = Presence::with(['store', 'shiftStore'])
                 ->where('created_by_id', $user->id)
                 ->whereDate('check_in', $today)
                 ->first();
         }
 
         // Ambil presensi sebelumnya
-        $previousPresences = Presence::with(['store', 'shiftStore', 'storeOut'])
+        $previousPresences = Presence::with(['store', 'shiftStore'])
             ->where('created_by_id', $user->id)
             ->where(function ($query) use ($todayPresence) {
                 if ($todayPresence) {

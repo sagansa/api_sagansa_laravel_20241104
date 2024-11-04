@@ -11,6 +11,26 @@ class Presence extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'check_in' => 'datetime:Y-m-d H:i:s',
+        'check_out' => 'datetime:Y-m-d H:i:s',
+        'latitude_in' => 'float',
+        'longitude_in' => 'float',
+        'latitude_out' => 'float',
+        'longitude_out' => 'float',
+        'status' => 'integer'
+    ];
+
+    public function store()
+    {
+        return $this->belongsTo(Store::class);
+    }
+
+    public function shiftStore()
+    {
+        return $this->belongsTo(ShiftStore::class);
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by_id');
@@ -19,15 +39,5 @@ class Presence extends Model
     public function approvedBy()
     {
         return $this->belongsTo(User::class, 'approved_by_id');
-    }
-
-    public function store()
-    {
-        return $this->belongsTo(Store::class, 'store_id');
-    }
-
-    public function shiftStore()
-    {
-        return $this->belongsTo(ShiftStore::class, 'shift_store_id');
     }
 }
