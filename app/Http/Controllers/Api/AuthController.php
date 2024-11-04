@@ -1,72 +1,87 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace app\Http\Controllers\api;
 
+use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function login(Request $request): JsonResponse
+    public function login(Request $request)
     {
-        try {
-            $credentials = $request->validate([
-                'email' => 'required|email',
-                'password' => 'required',
-            ]);
+        $request->validate([
+            'email' => 'required|string|email',
+            'password' => 'required'
+        ]);
 
-            if (!Auth::attempt($credentials)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Email atau password salah'
-                ], 401);
-            }
-
-            $user = User::where('email', $request->email)->first();
-
-            if (!$user) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'User tidak ditemukan'
-                ], 404);
-            }
-
-            // Load relations setelah user ditemukan
-            $user->load(['roles', 'company']);
-
-            $token = $user->createToken('auth-token');
-
+        $user = User::with('company')->where('email', $request->email)->first();
+        if (!$user || ! Hash::check($request->password, $user->password)) {
             return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'user' => [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'email' => $user->email,
-                        'roles' => $user->roles ? $user->roles->pluck('name') : [],
-                        'company' => $user->company ? [
-                            'id' => $user->company->id,
-                            'name' => $user->company->name,
-                        ] : null,
-                    ],
-                    'access_token' => $token->plainTextToken,
-                    'token_type' => 'Bearer',
-                ],
-                'message' => 'Login berhasil'
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Login error: ' . $e->getMessage());
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Terjadi kesalahan pada server',
-                'error' => $e->getMessage()
-            ], 500);
+                'success' => false,
+                'data' => null,
+                'message' => 'Invalid email or password'
+            ], 422);
         }
+
+        $token = $user->createToken('API Token')->plainTextToken;
+
+        $userData = [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'roles' => $user->roles->pluck('name'),
+            // 'permissions' => $user->getAllPermissions()->pluck('name'),
+            'company' => $user->company ? [
+                'id' => $user->company->id,
+                'name' => $user->company->name,
+                // tambahkan field company lain yang diperlukan
+            ] : null,
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'access_token' => $token,
+                'token_type' => 'Bearer',
+                'user' => $userData
+            ],
+            'message' => 'Login successful'
+        ]);
+    }
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json([
+            'success' => true,
+            'data' => null,
+            'message' => 'Logout successful'
+        ]);
+    }
+
+    public function me(Request $request)
+    {
+        $user = $request->user()->load('company');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'roles' => $user->roles->pluck('name'),
+                'permissions' => $user->getAllPermissions()->pluck('name'),
+                'company' => $user->company ? [
+                    'id' => $user->company->id,
+                    'name' => $user->company->name,
+                    // tambahkan field company lain yang diperlukan
+                ] : null,
+            ],
+            'message' => 'User data retrieved successfully'
+        ]);
     }
 }
