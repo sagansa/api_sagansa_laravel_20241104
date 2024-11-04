@@ -1,15 +1,9 @@
 <?php
 
-use app\Http\Controllers\api\AuthController;
-use app\Http\Controllers\api\LeaveController;
-use app\Http\Controllers\api\PresenceController;
-use app\Http\Controllers\api\SalaryController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\api\AuthController;
+use App\Http\Controllers\api\LeaveController;
+use App\Http\Controllers\api\PresenceController;
 use Illuminate\Support\Facades\Route;
-
-// Route::get('/user', function (Request $request) {
-//     return $request->user();
-// })->middleware('auth:sanctum');
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -28,17 +22,5 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [LeaveController::class, 'show']);
         Route::put('/{id}', [LeaveController::class, 'update']);
         Route::delete('/{id}', [LeaveController::class, 'destroy']);
-    });
-
-    // Route untuk salary
-    Route::prefix('salary')->group(function () {
-        // Get salary calculation
-        Route::get('/calculate', [SalaryController::class, 'getMySalary']);
-
-        // Get current rate
-        Route::get('/rate', [SalaryController::class, 'getCurrentRate']);
-
-        // Get monthly salaries list
-        Route::get('/monthly', [SalaryController::class, 'getMonthlySalaries']);
     });
 });

@@ -2,11 +2,10 @@
 
 namespace app\Http\Controllers\api;
 
-use App\Http\Controllers\Controller;
-use App\Models\PermitEmployee;
+use app\Http\Controllers\Controller;
+use app\Models\PermitEmployee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Carbon\Carbon;
 
 class LeaveController extends Controller
 {

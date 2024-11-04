@@ -2,11 +2,11 @@
 
 namespace app\Http\Controllers\api;
 
-use App\Http\Controllers\Controller;
-use App\Models\Presence;
-use App\Models\Store;
-use App\Models\ShiftStore;
-use App\Models\PermitEmployee;
+use app\Http\Controllers\Controller;
+use app\Models\Presence;
+use app\Models\Store;
+use app\Models\ShiftStore;
+use app\Models\PermitEmployee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
