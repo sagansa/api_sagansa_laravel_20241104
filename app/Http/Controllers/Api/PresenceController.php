@@ -10,6 +10,7 @@ use App\Models\PermitEmployee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 class PresenceController extends Controller
 {
@@ -164,120 +165,140 @@ class PresenceController extends Controller
 
     public function checkIn(Request $request)
     {
-        $user = Auth::user();
-        $now = Carbon::now();
+        try {
+            $user = Auth::user();
+            $now = Carbon::now();
 
-        // Cek apakah user sedang dalam masa cuti/izin
-        $activeLeave = PermitEmployee::where('created_by_id', $user->id)
-            ->where('status', PermitEmployee::STATUS_APPROVED)
-            ->where(function ($query) use ($now) {
-                $query->whereDate('from_date', '<=', $now)
-                    ->whereDate('until_date', '>=', $now);
-            })
-            ->first();
+            // Cek apakah user sedang dalam masa cuti/izin
+            $activeLeave = PermitEmployee::where('created_by_id', $user->id)
+                ->where('status', PermitEmployee::STATUS_APPROVED)
+                ->where(function ($query) use ($now) {
+                    $query->whereDate('from_date', '<=', $now)
+                        ->whereDate('until_date', '>=', $now);
+                })
+                ->first();
 
-        if ($activeLeave) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Anda tidak dapat melakukan presensi karena sedang dalam masa ' .
-                    PermitEmployee::getReasonText($activeLeave->reason),
-                'data' => [
-                    'leave' => [
-                        'reason' => $activeLeave->reason,
-                        'reason_text' => PermitEmployee::getReasonText($activeLeave->reason),
-                        'from_date' => $activeLeave->from_date,
-                        'until_date' => $activeLeave->until_date
+            if ($activeLeave) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Anda tidak dapat melakukan presensi karena sedang dalam masa ' .
+                        PermitEmployee::getReasonText($activeLeave->reason),
+                    'data' => [
+                        'leave' => [
+                            'reason' => $activeLeave->reason,
+                            'reason_text' => PermitEmployee::getReasonText($activeLeave->reason),
+                            'from_date' => $activeLeave->from_date,
+                            'until_date' => $activeLeave->until_date
+                        ]
                     ]
-                ]
-            ], 400);
-        }
+                ], 400);
+            }
 
-        // Cek apakah sudah ada presensi hari ini
-        $existingPresence = Presence::where('created_by_id', $user->id)
-            ->whereDate('check_in', $now->toDateString())
-            ->first();
+            // Cek apakah sudah ada presensi hari ini
+            $existingPresence = Presence::where('created_by_id', $user->id)
+                ->whereDate('check_in', $now->toDateString())
+                ->first();
 
-        if ($existingPresence) {
+            if ($existingPresence) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Anda sudah melakukan check-in hari ini'
+                ], 400);
+            }
+
+            // Validasi input
+            $request->validate([
+                'store_id' => 'required|exists:stores,id',
+                'shift_store_id' => 'required|exists:shift_stores,id',
+                'status' => 'required|in:1,2,3',
+                'latitude_in' => 'required|numeric|between:-90,90',
+                'longitude_in' => 'required|numeric|between:-180,180',
+                'image_in' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            ]);
+
+            // Cek jadwal shift
+            $shiftStore = ShiftStore::findOrFail($request->shift_store_id);
+            $shiftStartTime = Carbon::parse($now->format('Y-m-d') . ' ' . $shiftStore->shift_start_time);
+
+            // Hitung selisih waktu dengan jadwal shift
+            $hoursBeforeShift = $shiftStartTime->diffInHours($now, false);
+
+            // Hanya cek jika mencoba check-in lebih dari 3 jam sebelum shift
+            if ($hoursBeforeShift < -3) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Presensi hanya dapat dilakukan maksimal 3 jam sebelum shift dimulai',
+                    'data' => [
+                        'current_time' => $now->format('Y-m-d H:i:s'),
+                        'shift_start' => $shiftStartTime->format('Y-m-d H:i:s'),
+                        'hours_difference' => abs($hoursBeforeShift)
+                    ]
+                ], 400);
+            }
+
+            // Cari store terdekat yang sesuai dengan radius
+            $nearbyStore = Store::where('id', $request->store_id)
+                ->where('status', '<>', '8')
+                ->first();
+
+            if (!$nearbyStore) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Store tidak ditemukan'
+                ], 400);
+            }
+
+            // Hitung jarak
+            $distance = $this->calculateDistance(
+                $request->latitude_in,
+                $request->longitude_in,
+                $nearbyStore->latitude,
+                $nearbyStore->longitude
+            );
+
+            if ($distance > $nearbyStore->radius) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Anda harus berada dalam area store untuk melakukan check-in'
+                ], 400);
+            }
+
+            // Upload dan simpan image
+            $imagePath = null;
+            if ($request->hasFile('image_in')) {
+                $imagePath = $request->file('image_in')->store('presences/check-in', 'public');
+            }
+
+            // Buat presensi baru
+            $presence = new Presence([
+                'created_by_id' => $user->id,
+                'store_id' => $request->store_id,
+                'shift_store_id' => $request->shift_store_id,
+                'status' => $request->status,
+                'check_in' => $now,
+                'latitude_in' => $request->latitude_in,
+                'longitude_in' => $request->longitude_in,
+                'image_in' => $imagePath,
+            ]);
+
+            $presence->save();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Check-in berhasil',
+                'data' => $this->formatPresence($presence)
+            ], 201);
+        } catch (\Exception $e) {
+            // Hapus file jika upload gagal
+            if (isset($imagePath)) {
+                Storage::disk('public')->delete($imagePath);
+            }
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Anda sudah melakukan check-in hari ini'
-            ], 400);
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
         }
-
-        // Validasi input
-        $request->validate([
-            'store_id' => 'required|exists:stores,id',
-            'shift_store_id' => 'required|exists:shift_stores,id',
-            'status' => 'required|in:1,2,3',
-            'latitude_in' => 'required|numeric|between:-90,90',
-            'longitude_in' => 'required|numeric|between:-180,180',
-        ]);
-
-        // Cek jadwal shift
-        $shiftStore = ShiftStore::findOrFail($request->shift_store_id);
-        $shiftStartTime = Carbon::parse($now->format('Y-m-d') . ' ' . $shiftStore->shift_start_time);
-
-        // Hitung selisih waktu dengan jadwal shift
-        $hoursBeforeShift = $shiftStartTime->diffInHours($now, false);
-
-        // Hanya cek jika mencoba check-in lebih dari 3 jam sebelum shift
-        if ($hoursBeforeShift < -3) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Presensi hanya dapat dilakukan maksimal 3 jam sebelum shift dimulai',
-                'data' => [
-                    'current_time' => $now->format('Y-m-d H:i:s'),
-                    'shift_start' => $shiftStartTime->format('Y-m-d H:i:s'),
-                    'hours_difference' => abs($hoursBeforeShift)
-                ]
-            ], 400);
-        }
-
-        // Cari store terdekat yang sesuai dengan radius
-        $nearbyStore = Store::where('id', $request->store_id)
-            ->where('status', '<>', '8')
-            ->first();
-
-        if (!$nearbyStore) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Store tidak ditemukan'
-            ], 400);
-        }
-
-        // Hitung jarak
-        $distance = $this->calculateDistance(
-            $request->latitude_in,
-            $request->longitude_in,
-            $nearbyStore->latitude,
-            $nearbyStore->longitude
-        );
-
-        if ($distance > $nearbyStore->radius) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Anda harus berada dalam area store untuk melakukan check-in'
-            ], 400);
-        }
-
-        // Buat presensi baru
-        $presence = new Presence([
-            'created_by_id' => $user->id,
-            'store_id' => $request->store_id,
-            'shift_store_id' => $request->shift_store_id,
-            'status' => $request->status,
-            'check_in' => $now,
-            'latitude_in' => $request->latitude_in,
-            'longitude_in' => $request->longitude_in,
-        ]);
-
-        $presence->save();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Check-in berhasil',
-            'data' => $this->formatPresence($presence)
-        ], 201);
     }
 
     public function checkOut(Request $request)
