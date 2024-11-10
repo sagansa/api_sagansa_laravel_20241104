@@ -147,12 +147,14 @@ class PresenceController extends Controller
             'store' => $presence->store ? $presence->store->nickname : null,
             'shift_store' => $presence->shiftStore ? $presence->shiftStore->name : null,
             'status' => $presence->status,
-            'check_in' => $checkInDateTime->format('Y-m-d H:i:s'),  // Format waktu lokal
+            'check_in' => $checkInDateTime->format('Y-m-d H:i:s'),
             'check_out' => $checkOutDateTime ? $checkOutDateTime->format('Y-m-d H:i:s') : null,
             'latitude_in' => $presence->latitude_in,
             'longitude_in' => $presence->longitude_in,
+            'image_in' => $presence->image_in ? url('storage/' . $presence->image_in) : null,
             'latitude_out' => $presence->latitude_out,
             'longitude_out' => $presence->longitude_out,
+            'image_out' => $presence->image_out ? url('storage/' . $presence->image_out) : null,
             'shift_start_time' => $shiftStartTime,
             'shift_end_time' => $shiftEndTime,
             'check_in_status' => $checkInStatus,
@@ -303,87 +305,111 @@ class PresenceController extends Controller
 
     public function checkOut(Request $request)
     {
-        $user = Auth::user();
-        $now = Carbon::now();
+        try {
+            $user = Auth::user();
+            $now = Carbon::now();
 
-        // Cari presensi yang belum checkout
-        $presence = Presence::where('created_by_id', $user->id)
-            ->whereNull('check_out')
-            ->orderBy('check_in', 'desc')
-            ->first();
+            // Cari presensi yang belum checkout
+            $presence = Presence::where('created_by_id', $user->id)
+                ->whereNull('check_out')
+                ->orderBy('check_in', 'desc')
+                ->first();
 
-        if (!$presence) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Tidak ada presensi yang dapat di-checkout'
-            ], 400);
-        }
-
-        // Cek apakah masih dalam batas waktu checkout (3 jam setelah shift berakhir)
-        $shiftStore = $presence->shiftStore;
-        if ($shiftStore) {
-            $checkInDate = Carbon::parse($presence->check_in);
-            $shiftEndDateTime = Carbon::parse($checkInDate->format('Y-m-d') . ' ' . $shiftStore->shift_end_time);
-
-            // Jika shift berakhir di hari berikutnya
-            if ($shiftStore->shift_end_time < $shiftStore->shift_start_time) {
-                $shiftEndDateTime->addDay();
-            }
-
-            // Tambah toleransi 3 jam
-            $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3);
-
-            if ($now->isAfter($checkoutDeadline)) {
+            if (!$presence) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Batas waktu checkout telah berakhir',
-                    'data' => [
-                        'current_time' => $now->format('Y-m-d H:i:s'),
-                        'shift_end' => $shiftEndDateTime->format('Y-m-d H:i:s'),
-                        'checkout_deadline' => $checkoutDeadline->format('Y-m-d H:i:s')
-                    ]
+                    'message' => 'Tidak ada presensi yang dapat di-checkout'
                 ], 400);
             }
-        }
 
-        // Validasi input
-        $request->validate([
-            'latitude_out' => 'required|numeric|between:-90,90',
-            'longitude_out' => 'required|numeric|between:-180,180',
-        ]);
+            // Cek apakah masih dalam batas waktu checkout (3 jam setelah shift berakhir)
+            $shiftStore = $presence->shiftStore;
+            if ($shiftStore) {
+                $checkInDate = Carbon::parse($presence->check_in);
+                $shiftEndDateTime = Carbon::parse($checkInDate->format('Y-m-d') . ' ' . $shiftStore->shift_end_time);
 
-        // Cari store terdekat yang sesuai dengan radius
-        $nearbyStore = Store::where('status', '<>', '8')
-            ->get()
-            ->filter(function ($store) use ($request) {
-                $distance = $this->calculateDistance(
-                    $request->latitude_out,
-                    $request->longitude_out,
-                    $store->latitude,
-                    $store->longitude
-                );
-                return $distance <= $store->radius;
-            })
-            ->first();
+                // Jika shift berakhir di hari berikutnya
+                if ($shiftStore->shift_end_time < $shiftStore->shift_start_time) {
+                    $shiftEndDateTime->addDay();
+                }
 
-        if (!$nearbyStore) {
+                // Tambah toleransi 3 jam
+                $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3);
+
+                if ($now->isAfter($checkoutDeadline)) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Batas waktu checkout telah berakhir',
+                        'data' => [
+                            'current_time' => $now->format('Y-m-d H:i:s'),
+                            'shift_end' => $shiftEndDateTime->format('Y-m-d H:i:s'),
+                            'checkout_deadline' => $checkoutDeadline->format('Y-m-d H:i:s')
+                        ]
+                    ], 400);
+                }
+            }
+
+            // Validasi input
+            $request->validate([
+                'latitude_out' => 'required|numeric|between:-90,90',
+                'longitude_out' => 'required|numeric|between:-180,180',
+                'image_out' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            ]);
+
+            // Cari store terdekat yang sesuai dengan radius
+            $nearbyStore = Store::where('status', '<>', '8')
+                ->get()
+                ->filter(function ($store) use ($request) {
+                    $distance = $this->calculateDistance(
+                        $request->latitude_out,
+                        $request->longitude_out,
+                        $store->latitude,
+                        $store->longitude
+                    );
+                    return $distance <= $store->radius;
+                })
+                ->first();
+
+            if (!$nearbyStore) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Anda harus berada dalam area store untuk melakukan check-out'
+                ], 400);
+            }
+
+            try {
+                // Upload dan simpan image
+                $imagePath = null;
+                if ($request->hasFile('image_out')) {
+                    $imagePath = $request->file('image_out')->store('presences/check-out', 'public');
+                }
+
+                // Update presensi
+                $presence->check_out = $now;
+                $presence->latitude_out = $request->latitude_out;
+                $presence->longitude_out = $request->longitude_out;
+                $presence->image_out = $imagePath;
+                $presence->save();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Check-out berhasil',
+                    'data' => $this->formatPresence($presence)
+                ]);
+            } catch (\Exception $e) {
+                // Hapus file jika upload gagal
+                if (isset($imagePath)) {
+                    Storage::disk('public')->delete($imagePath);
+                }
+
+                throw $e;
+            }
+        } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Anda harus berada dalam area store untuk melakukan check-out'
-            ], 400);
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
         }
-
-        // Update presensi
-        $presence->check_out = $now;
-        $presence->latitude_out = $request->latitude_out;
-        $presence->longitude_out = $request->longitude_out;
-        $presence->save();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Check-out berhasil',
-            'data' => $this->formatPresence($presence)
-        ]);
     }
 
     // Tambahkan method untuk menghitung jarak
