@@ -178,22 +178,31 @@ class PresenceController extends Controller
                     $query->whereDate('from_date', '<=', $now)
                         ->whereDate('until_date', '>=', $now);
                 })
+                ->orderBy('from_date', 'desc')
                 ->first();
 
             if ($activeLeave) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Anda tidak dapat melakukan presensi karena sedang dalam masa ' .
-                        PermitEmployee::getReasonText($activeLeave->reason),
-                    'data' => [
-                        'leave' => [
-                            'reason' => $activeLeave->reason,
-                            'reason_text' => PermitEmployee::getReasonText($activeLeave->reason),
-                            'from_date' => $activeLeave->from_date,
-                            'until_date' => $activeLeave->until_date
+                // Pastikan tanggal hari ini termasuk dalam rentang cuti
+                $currentDate = $now->format('Y-m-d');
+                $fromDate = Carbon::parse($activeLeave->from_date)->format('Y-m-d');
+                $untilDate = Carbon::parse($activeLeave->until_date)->format('Y-m-d');
+
+                if ($currentDate >= $fromDate && $currentDate <= $untilDate) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Anda tidak dapat melakukan presensi karena sedang dalam masa ' .
+                            PermitEmployee::getReasonText($activeLeave->reason),
+                        'data' => [
+                            'leave' => [
+                                'reason' => $activeLeave->reason,
+                                'reason_text' => PermitEmployee::getReasonText($activeLeave->reason),
+                                'from_date' => $activeLeave->from_date,
+                                'until_date' => $activeLeave->until_date,
+                                'current_date' => $currentDate
+                            ]
                         ]
-                    ]
-                ], 400);
+                    ], 400);
+                }
             }
 
             // Cek apakah sudah ada presensi hari ini
@@ -215,7 +224,7 @@ class PresenceController extends Controller
                 'status' => 'required|in:1,2,3',
                 'latitude_in' => 'required|numeric|between:-90,90',
                 'longitude_in' => 'required|numeric|between:-180,180',
-                'image_in' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+                'image_in' => 'required|image|mimes:jpeg,png,jpg',
             ]);
 
             // Cek jadwal shift
@@ -353,7 +362,7 @@ class PresenceController extends Controller
             $request->validate([
                 'latitude_out' => 'required|numeric|between:-90,90',
                 'longitude_out' => 'required|numeric|between:-180,180',
-                'image_out' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+                'image_out' => 'required|image|mimes:jpeg,png,jpg',
             ]);
 
             // Cari store terdekat yang sesuai dengan radius
