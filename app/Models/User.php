@@ -52,4 +52,30 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Company::class);
     }
+
+    /**
+     * Get the face encodings for the user.
+     */
+    public function faceEncodings()
+    {
+        return $this->hasMany(FaceEncoding::class);
+    }
+
+    /**
+     * Get the active face encoding for the user.
+     */
+    public function activeFaceEncoding()
+    {
+        return $this->hasOne(FaceEncoding::class)->where('is_active', true)->latest('registered_at');
+    }
+
+    /**
+     * Check if user has face recognition enabled.
+     */
+    public function hasFaceRecognition(): bool
+    {
+        return $this->activeFaceEncoding()->exists();
+    }
+
+    // Sanctum tokens relationship is already provided by HasApiTokens trait
 }

@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'face_recognition' => [
+        'url' => env('FACE_RECOGNITION_SERVICE_URL', 'http://localhost:5000'),
+        'confidence_threshold' => env('FACE_RECOGNITION_CONFIDENCE_THRESHOLD', 0.6),
+    ],
+
 ];
