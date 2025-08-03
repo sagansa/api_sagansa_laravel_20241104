@@ -13,11 +13,15 @@ class FaceRecognitionService
 {
     private string $pythonServiceUrl;
     private float $confidenceThreshold;
+    private float $highConfidenceThreshold;
+    private float $lowConfidenceThreshold;
 
     public function __construct()
     {
         $this->pythonServiceUrl = config('services.face_recognition.url', 'http://localhost:5000');
         $this->confidenceThreshold = config('services.face_recognition.confidence_threshold', 0.6);
+        $this->highConfidenceThreshold = config('services.face_recognition.high_confidence_threshold', 0.8);
+        $this->lowConfidenceThreshold = config('services.face_recognition.low_confidence_threshold', 0.4);
     }
 
     /**
@@ -117,11 +121,17 @@ class FaceRecognitionService
             Storage::delete($imagePath);
 
             $isMatch = $confidence >= $this->confidenceThreshold;
+            $confidenceLevel = $this->getConfidenceLevel($confidence);
+
+            $message = $this->getVerificationMessage($confidence, $isMatch);
 
             return [
                 'success' => $isMatch,
-                'message' => $isMatch ? 'Face verification successful.' : 'Face verification failed. Please try again.',
+                'message' => $message,
                 'confidence' => $confidence,
+                'confidence_level' => $confidenceLevel,
+                'threshold_met' => $isMatch,
+                'requires_review' => $confidence < $this->lowConfidenceThreshold,
             ];
 
         } catch (\Exception $e) {
@@ -226,6 +236,54 @@ class FaceRecognitionService
             'has_face_registered' => !is_null($faceEncoding),
             'registration_date' => $faceEncoding?->registered_at?->toDateTimeString(),
             'encoding_version' => $faceEncoding?->encoding_version,
+        ];
+    }
+
+    /**
+     * Get confidence level description based on confidence score.
+     */
+    private function getConfidenceLevel(float $confidence): string
+    {
+        if ($confidence >= $this->highConfidenceThreshold) {
+            return 'high';
+        } elseif ($confidence >= $this->confidenceThreshold) {
+            return 'medium';
+        } elseif ($confidence >= $this->lowConfidenceThreshold) {
+            return 'low';
+        }
+
+        return 'very_low';
+    }
+
+    /**
+     * Get verification message based on confidence score.
+     */
+    private function getVerificationMessage(float $confidence, bool $isMatch): string
+    {
+        if ($isMatch) {
+            if ($confidence >= $this->highConfidenceThreshold) {
+                return 'Face verification successful with high confidence.';
+            } else {
+                return 'Face verification successful.';
+            }
+        } else {
+            if ($confidence >= $this->lowConfidenceThreshold) {
+                return 'Face verification failed. The face does not match closely enough. Please try again.';
+            } else {
+                return 'Face verification failed with low confidence. Please ensure good lighting and face the camera directly.';
+            }
+        }
+    }
+
+    /**
+     * Get confidence thresholds for validation.
+     */
+    public function getConfidenceThresholds(): array
+    {
+        return [
+            'minimum' => $this->confidenceThreshold,
+            'high' => $this->highConfidenceThreshold,
+            'low' => $this->lowConfidenceThreshold,
         ];
     }
 }

@@ -4,13 +4,16 @@ namespace App\Http\Controllers\api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Presence;
+use App\Models\PresenceValidation;
 use App\Models\Store;
 use App\Models\ShiftStore;
 use App\Models\PermitEmployee;
+use App\Models\FaceEncoding;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class PresenceController extends Controller
 {
@@ -24,7 +27,7 @@ class PresenceController extends Controller
         // Jika masih dalam rentang toleransi (sebelum jam 3 pagi)
         if ($now->lt($toleranceEnd)) {
             $yesterday = Carbon::yesterday();
-            $todayPresence = Presence::with(['store', 'shiftStore'])
+            $todayPresence = Presence::with(['store', 'shiftStore', 'validation'])
                 ->where('created_by_id', $user->id)
                 ->whereDate('check_in', $yesterday)
                 ->whereNull('check_out')
@@ -32,21 +35,21 @@ class PresenceController extends Controller
 
             // Jika tidak ada presensi hari kemarin yang belum checkout, cek hari ini
             if (!$todayPresence) {
-                $todayPresence = Presence::with(['store', 'shiftStore'])
+                $todayPresence = Presence::with(['store', 'shiftStore', 'validation'])
                     ->where('created_by_id', $user->id)
                     ->whereDate('check_in', $today)
                     ->first();
             }
         } else {
             // Di luar toleransi, ambil presensi hari ini
-            $todayPresence = Presence::with(['store', 'shiftStore'])
+            $todayPresence = Presence::with(['store', 'shiftStore', 'validation'])
                 ->where('created_by_id', $user->id)
                 ->whereDate('check_in', $today)
                 ->first();
         }
 
         // Ambil presensi sebelumnya
-        $previousPresences = Presence::with(['store', 'shiftStore'])
+        $previousPresences = Presence::with(['store', 'shiftStore', 'validation'])
             ->where('created_by_id', $user->id)
             ->where(function ($query) use ($todayPresence) {
                 if ($todayPresence) {
@@ -142,8 +145,26 @@ class PresenceController extends Controller
             }
         }
 
+        // Get validation data
+        $validation = $presence->validation;
+        $validationData = null;
+        if ($validation) {
+            $validationData = [
+                'status' => $validation->validation_status,
+                'face_confidence' => $validation->face_confidence,
+                'face_confidence_level' => $validation->face_confidence_level,
+                'gps_accuracy' => $validation->gps_accuracy,
+                'location_source' => $validation->location_source,
+                'security_flags' => $validation->security_flags,
+                'retry_count' => $validation->retry_count,
+                'can_retry' => $validation->canRetry(),
+                'validated_at' => $validation->validated_at?->timezone('Asia/Jakarta')->format('Y-m-d H:i:s'),
+            ];
+        }
+
         // Format response dengan waktu lokal
         return [
+            'id' => $presence->id,
             'store' => $presence->store ? $presence->store->nickname : null,
             'shift_store' => $presence->shiftStore ? $presence->shiftStore->name : null,
             'status' => $presence->status,
@@ -162,6 +183,7 @@ class PresenceController extends Controller
             'late_minutes' => $lateMinutes,
             'shift_end_datetime' => $shiftEndDateTime ? $shiftEndDateTime->timezone('Asia/Jakarta')->format('Y-m-d H:i:s') : null,
             'checkout_deadline' => isset($checkoutDeadline) ? $checkoutDeadline->timezone('Asia/Jakarta')->format('Y-m-d H:i:s') : null,
+            'validation' => $validationData,
         ];
     }
 
@@ -170,6 +192,9 @@ class PresenceController extends Controller
         try {
             $user = Auth::user();
             $now = Carbon::now();
+
+            // Apply face validation logic
+            $this->applyFaceValidation($request, $user);
 
             // Cek apakah user sedang dalam masa cuti/izin
             $activeLeave = PermitEmployee::where('created_by_id', $user->id)
@@ -218,14 +243,22 @@ class PresenceController extends Controller
             }
 
             // Validasi input
-            $request->validate([
+            $validationRules = [
                 'store_id' => 'required|exists:stores,id',
                 'shift_store_id' => 'required|exists:shift_stores,id',
                 'status' => 'required|in:1,2,3',
                 'latitude_in' => 'required|numeric|between:-90,90',
                 'longitude_in' => 'required|numeric|between:-180,180',
                 'image_in' => 'required|image|mimes:jpeg,png,jpg',
-            ]);
+            ];
+
+            // Add face image validation if user has face registered
+            $faceEncoding = FaceEncoding::getActiveEncodingForUser($user->id);
+            if ($faceEncoding) {
+                $validationRules['face_image'] = 'required|image|mimes:jpeg,png,jpg,gif|max:10240';
+            }
+
+            $request->validate($validationRules);
 
             // Cek jadwal shift
             $shiftStore = ShiftStore::findOrFail($request->shift_store_id);
@@ -294,11 +327,17 @@ class PresenceController extends Controller
 
             $presence->save();
 
+            // Create presence validation record
+            $this->createPresenceValidation($presence, $request);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Check-in berhasil',
                 'data' => $this->formatPresence($presence)
             ], 201);
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            // Re-throw HttpResponseException to maintain proper status codes
+            throw $e;
         } catch (\Exception $e) {
             // Hapus file jika upload gagal
             if (isset($imagePath)) {
@@ -317,6 +356,9 @@ class PresenceController extends Controller
         try {
             $user = Auth::user();
             $now = Carbon::now();
+
+            // Apply face validation logic
+            $this->applyFaceValidation($request, $user);
 
             // Cari presensi yang belum checkout
             $presence = Presence::where('created_by_id', $user->id)
@@ -400,6 +442,9 @@ class PresenceController extends Controller
                 $presence->image_out = $imagePath;
                 $presence->save();
 
+                // Update presence validation for check-out
+                $this->updatePresenceValidationForCheckout($presence, $request);
+
                 return response()->json([
                     'status' => 'success',
                     'message' => 'Check-out berhasil',
@@ -413,6 +458,9 @@ class PresenceController extends Controller
 
                 throw $e;
             }
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            // Re-throw HttpResponseException to maintain proper status codes
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -473,5 +521,253 @@ class PresenceController extends Controller
             'status' => 'success',
             'data' => $shiftStores
         ]);
+    }
+
+    /**
+     * Create presence validation record for check-in.
+     */
+    private function createPresenceValidation(Presence $presence, Request $request): void
+    {
+        $validationData = [
+            'presence_id' => $presence->id,
+            'gps_accuracy' => $request->input('gps_accuracy'),
+            'location_source' => $request->input('location_source', 'GPS'),
+            'validation_status' => PresenceValidation::STATUS_PENDING,
+            'security_flags' => [],
+        ];
+
+        // Add face validation data if available
+        if ($request->has('face_verification_result')) {
+            $faceResult = $request->input('face_verification_result');
+            $validationData['face_confidence'] = $faceResult['confidence'] ?? 0.0;
+            
+            if ($faceResult['success']) {
+                $validationData['validation_status'] = PresenceValidation::STATUS_PASSED;
+                $validationData['validated_at'] = now();
+            } else {
+                $validationData['validation_status'] = PresenceValidation::STATUS_FAILED;
+                $validationData['security_flags'][] = 'face_verification_failed';
+            }
+        } elseif ($request->input('face_validation_skipped')) {
+            $validationData['security_flags'][] = 'face_not_registered';
+            $validationData['validation_status'] = PresenceValidation::STATUS_PASSED;
+            $validationData['validated_at'] = now();
+        }
+
+        PresenceValidation::create($validationData);
+
+        Log::info('Presence validation created', [
+            'presence_id' => $presence->id,
+            'user_id' => $presence->created_by_id,
+            'validation_status' => $validationData['validation_status'],
+            'face_confidence' => $validationData['face_confidence'] ?? null,
+        ]);
+    }
+
+    /**
+     * Update presence validation for check-out.
+     */
+    private function updatePresenceValidationForCheckout(Presence $presence, Request $request): void
+    {
+        $validation = $presence->validation;
+        if (!$validation) {
+            // Create validation if it doesn't exist
+            $this->createPresenceValidation($presence, $request);
+            return;
+        }
+
+        $updateData = [
+            'gps_accuracy' => $request->input('gps_accuracy'),
+            'location_source' => $request->input('location_source', 'GPS'),
+        ];
+
+        // Update face validation data if available
+        if ($request->has('face_verification_result')) {
+            $faceResult = $request->input('face_verification_result');
+            $updateData['face_confidence'] = $faceResult['confidence'] ?? 0.0;
+            
+            if ($faceResult['success']) {
+                $updateData['validation_status'] = PresenceValidation::STATUS_PASSED;
+                $updateData['validated_at'] = now();
+            } else {
+                $updateData['validation_status'] = PresenceValidation::STATUS_FAILED;
+                $securityFlags = $validation->security_flags ?? [];
+                $securityFlags[] = 'checkout_face_verification_failed';
+                $updateData['security_flags'] = $securityFlags;
+            }
+        }
+
+        $validation->update($updateData);
+
+        Log::info('Presence validation updated for checkout', [
+            'presence_id' => $presence->id,
+            'user_id' => $presence->created_by_id,
+            'validation_status' => $updateData['validation_status'] ?? $validation->validation_status,
+            'face_confidence' => $updateData['face_confidence'] ?? null,
+        ]);
+    }
+
+    /**
+     * Retry face verification for a presence.
+     */
+    public function retryFaceVerification(Request $request, $presenceId)
+    {
+        try {
+            $user = Auth::user();
+            $presence = Presence::where('id', $presenceId)
+                ->where('created_by_id', $user->id)
+                ->with('validation')
+                ->first();
+
+            if (!$presence) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Presence not found'
+                ], 404);
+            }
+
+            $validation = $presence->validation;
+            if (!$validation) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'No validation record found'
+                ], 404);
+            }
+
+            if (!$validation->canRetry()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Maximum retry attempts exceeded',
+                    'max_attempts' => PresenceValidation::MAX_RETRY_ATTEMPTS,
+                    'current_attempts' => $validation->retry_count
+                ], 400);
+            }
+
+            // Validate face image
+            $request->validate([
+                'face_image' => 'required|image|mimes:jpeg,png,jpg,gif|max:10240',
+            ]);
+
+            // Perform face verification
+            $faceImage = $request->file('face_image');
+            $faceRecognitionService = app(\App\Services\FaceRecognitionService::class);
+            $verificationResult = $faceRecognitionService->verifyFace($user, $faceImage);
+
+            // Increment retry count
+            $validation->incrementRetryCount();
+
+            if ($verificationResult['success']) {
+                $validation->update([
+                    'face_confidence' => $verificationResult['confidence'],
+                    'validation_status' => PresenceValidation::STATUS_PASSED,
+                    'validated_at' => now(),
+                ]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Face verification successful',
+                    'confidence' => $verificationResult['confidence'],
+                    'retry_count' => $validation->retry_count,
+                ]);
+            } else {
+                $validation->update([
+                    'face_confidence' => $verificationResult['confidence'],
+                    'validation_status' => $validation->canRetry() 
+                        ? PresenceValidation::STATUS_RETRY_REQUIRED 
+                        : PresenceValidation::STATUS_FAILED,
+                ]);
+
+                if (!$validation->canRetry()) {
+                    $validation->addSecurityFlag('max_retry_attempts_exceeded');
+                }
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $verificationResult['message'],
+                    'confidence' => $verificationResult['confidence'],
+                    'retry_count' => $validation->retry_count,
+                    'can_retry' => $validation->canRetry(),
+                    'max_attempts' => PresenceValidation::MAX_RETRY_ATTEMPTS,
+                ], 400);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Face verification retry failed', [
+                'presence_id' => $presenceId,
+                'user_id' => $user->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Face verification retry failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Apply face validation logic to the request.
+     */
+    private function applyFaceValidation(Request $request, $user): void
+    {
+        // Skip validation if user doesn't have face registered
+        $faceEncoding = FaceEncoding::getActiveEncodingForUser($user->id);
+        if (!$faceEncoding) {
+            // Add flag to request indicating face validation was skipped
+            $request->merge(['face_validation_skipped' => true]);
+            return;
+        }
+
+        // Check if face image is provided
+        if (!$request->hasFile('face_image')) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(
+                response()->json([
+                    'status' => 'error',
+                    'message' => 'Face verification required. Please provide face image.',
+                    'error_code' => 'FACE_IMAGE_REQUIRED',
+                ], 422)
+            );
+        }
+
+        // Validate face image
+        $validator = validator($request->all(), [
+            'face_image' => 'required|image|mimes:jpeg,png,jpg,gif|max:10240',
+        ]);
+
+        if ($validator->fails()) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(
+                response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid face image.',
+                    'errors' => $validator->errors(),
+                    'error_code' => 'INVALID_FACE_IMAGE',
+                ], 422)
+            );
+        }
+
+        // Perform face verification
+        $faceImage = $request->file('face_image');
+        $faceRecognitionService = app(\App\Services\FaceRecognitionService::class);
+        $verificationResult = $faceRecognitionService->verifyFace($user, $faceImage);
+
+        // Add face verification result to request
+        $request->merge([
+            'face_verification_result' => $verificationResult,
+            'face_confidence' => $verificationResult['confidence'] ?? 0.0,
+        ]);
+
+        // Log face verification result
+        if (!$verificationResult['success']) {
+            Log::warning('Face verification failed during presence', [
+                'user_id' => $user->id,
+                'confidence' => $verificationResult['confidence'] ?? 0.0,
+                'message' => $verificationResult['message'] ?? 'Unknown error',
+            ]);
+        } else {
+            Log::info('Face verification successful during presence', [
+                'user_id' => $user->id,
+                'confidence' => $verificationResult['confidence'],
+            ]);
+        }
     }
 }
