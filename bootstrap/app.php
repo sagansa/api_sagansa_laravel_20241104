@@ -16,11 +16,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         then: function () {
             Route::middleware('web')->group(__DIR__ . '/../routes/app.php');
-            Route::middleware('api')->prefix('api')->group(__DIR__ . '/../routes/api.php');
+            Route::middleware('api')->group(__DIR__ . '/../routes/api.php');
         }
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Using auth:sanctum middleware instead of custom middleware
+        //
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

@@ -1,28 +1,22 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\FaceRecognitionController;
 use App\Http\Controllers\Api\LeaveController;
 use App\Http\Controllers\Api\PresenceController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use Illuminate\Support\Facades\Route;
 
-// Authentication routes
 Route::post('/login', [AuthController::class, 'login']);
-Route::post('/validate-token', [AuthController::class, 'validateToken']);
 
-// Routes protected by Sanctum (backward compatibility)
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
-    Route::post('/logout', [AuthController::class, 'logout']);
-    Route::post('/revoke-all-tokens', [AuthController::class, 'revokeAllTokens']);
-    
     Route::get('/user-presence', [PresenceController::class, 'getUserPresence']);
     Route::post('/check-in', [PresenceController::class, 'checkIn']);
     Route::post('/check-out', [PresenceController::class, 'checkOut']);
     Route::post('/presence/{id}/retry-face', [PresenceController::class, 'retryFaceVerification']);
     Route::get('/stores', [PresenceController::class, 'getStores']);
     Route::get('/shift-stores', [PresenceController::class, 'getShiftStores']);
+    Route::post('/logout', [AuthController::class, 'logout']);
 
     Route::prefix('leaves')->group(function () {
         Route::get('/', [LeaveController::class, 'index']);
@@ -31,6 +25,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}', [LeaveController::class, 'update']);
         Route::delete('/{id}', [LeaveController::class, 'destroy']);
     });
+<<<<<<< HEAD
 
     // Face Recognition routes
     Route::prefix('face')->group(function () {
@@ -89,4 +84,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/face-registration-stats', [AdminDashboardController::class, 'getFaceRegistrationStats']);
         Route::get('/face-accuracy-metrics', [AdminDashboardController::class, 'getFaceAccuracyMetrics']);
     });
+=======
+>>>>>>> parent of 32b6b30 (update face recognition)
 });
