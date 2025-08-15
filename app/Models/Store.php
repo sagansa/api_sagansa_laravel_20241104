@@ -9,19 +9,22 @@ class Store extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    protected $fillable = [
+        'name',
+        'nickname',
+        'address',
+        'latitude',
+        'longitude',
+        'radius',
+        'is_active'
+    ];
 
     protected $casts = [
         'latitude' => 'float',
         'longitude' => 'float',
-        'radius' => 'float',
-        'status' => 'integer'
+        'radius' => 'integer',
+        'is_active' => 'boolean'
     ];
-
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
 
     public function shiftStores()
     {
@@ -31,5 +34,10 @@ class Store extends Model
     public function presences()
     {
         return $this->hasMany(Presence::class);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
     }
 }

@@ -13,17 +13,22 @@ class RoleAndPermissionSeeder extends Seeder
         // Reset cached roles and permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // Buat Permissions
-        Permission::create(['name' => 'view posts']);
-        Permission::create(['name' => 'create posts']);
-        Permission::create(['name' => 'edit posts']);
-        Permission::create(['name' => 'delete posts']);
+        // Buat Permissions untuk presence management
+        Permission::create(['name' => 'view presences']);
+        Permission::create(['name' => 'create presences']);
+        Permission::create(['name' => 'edit presences']);
+        Permission::create(['name' => 'delete presences']);
+        Permission::create(['name' => 'view reports']);
+        Permission::create(['name' => 'manage users']);
 
         // Buat Roles
-        $userRole = Role::create(['name' => 'user']);
-        $userRole->givePermissionTo(['view posts', 'create posts']);
+        $staffRole = Role::create(['name' => 'staff']);
+        $staffRole->givePermissionTo(['view presences']);
 
         $adminRole = Role::create(['name' => 'admin']);
         $adminRole->givePermissionTo(Permission::all());
+
+        $managerRole = Role::create(['name' => 'manager']);
+        $managerRole->givePermissionTo(['view presences', 'view reports']);
     }
 }

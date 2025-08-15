@@ -45,4 +45,20 @@ class Presence extends Model
     {
         return $this->hasOne(PresenceValidation::class);
     }
+
+    // Admin-specific scopes
+    public function scopeWithFullDetails($query)
+    {
+        return $query->with(['createdBy', 'store', 'shiftStore', 'validation']);
+    }
+    
+    public function scopeForDateRange($query, $startDate, $endDate)
+    {
+        return $query->whereBetween('check_in', [$startDate, $endDate]);
+    }
+    
+    public function scopeForEmployee($query, $userId)
+    {
+        return $query->where('created_by_id', $userId);
+    }
 }

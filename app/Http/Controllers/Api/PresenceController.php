@@ -508,7 +508,7 @@ class PresenceController extends Controller
             });
 
         return response()->json([
-            'status' => 'success',
+            'success' => true,
             'data' => $stores
         ]);
     }
@@ -518,7 +518,7 @@ class PresenceController extends Controller
         $shiftStores = ShiftStore::select('id', 'name', 'shift_start_time', 'shift_end_time')
             ->get();
         return response()->json([
-            'status' => 'success',
+            'success' => true,
             'data' => $shiftStores
         ]);
     }

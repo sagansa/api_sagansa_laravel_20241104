@@ -17,7 +17,13 @@ class StoreFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'name' => $this->faker->company(),
+            'nickname' => $this->faker->companySuffix(),
+            'address' => $this->faker->address(),
+            'latitude' => $this->faker->latitude(-90, 90),
+            'longitude' => $this->faker->longitude(-180, 180),
+            'radius' => $this->faker->numberBetween(50, 200),
+            'is_active' => true,
         ];
     }
 }

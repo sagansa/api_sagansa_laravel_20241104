@@ -9,16 +9,25 @@ class ShiftStore extends Model
 {
     use HasFactory;
 
-    protected $guarded = [];
+    protected $fillable = [
+        'store_id',
+        'name',
+        'start_time',
+        'end_time',
+        'tolerance_minutes',
+        'is_active'
+    ];
 
-    public function getShiftStartTimeAttribute($value)
-    {
-        return date('H:i:s', strtotime($value));
-    }
+    protected $casts = [
+        'start_time' => 'datetime:H:i:s',
+        'end_time' => 'datetime:H:i:s',
+        'tolerance_minutes' => 'integer',
+        'is_active' => 'boolean'
+    ];
 
-    public function getShiftEndTimeAttribute($value)
+    public function store()
     {
-        return date('H:i:s', strtotime($value));
+        return $this->belongsTo(Store::class);
     }
 
     public function presences()
@@ -26,8 +35,8 @@ class ShiftStore extends Model
         return $this->hasMany(Presence::class);
     }
 
-    public function store()
+    public function scopeActive($query)
     {
-        return $this->belongsTo(Store::class);
+        return $query->where('is_active', true);
     }
 }
