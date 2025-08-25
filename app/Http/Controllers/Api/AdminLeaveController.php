@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 class AdminLeaveController extends Controller
 {
     // Implement admin leave management methods here
-    public function index()
+    public function index() // perbaikan
     {
         $user = Auth::user();
 
