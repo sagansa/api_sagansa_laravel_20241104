@@ -9,16 +9,75 @@ use Illuminate\Support\Facades\Auth;
 
 class LeaveController extends Controller
 {
+    /**
+     * Approve leave request
+     */
+    public function approve($id, Request $request)
+    {
+        $user = Auth::user();
+        // Hanya admin yang boleh approve
+        if (!$user->hasRole('admin')) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 403);
+        }
+        $leave = PermitEmployee::findOrFail($id);
+        if ($leave->status != PermitEmployee::STATUS_PENDING) {
+            return response()->json(['status' => 'error', 'message' => 'Cuti sudah diproses'], 400);
+        }
+        $leave->status = PermitEmployee::STATUS_APPROVED;
+        $leave->approved_by_id = $user->id;
+        $leave->approved_at = now();
+        $leave->save();
+        // TODO: Trigger notifikasi ke karyawan
+        return response()->json(['status' => 'success', 'message' => 'Cuti disetujui', 'data' => $this->formatLeave($leave)]);
+    }
+
+    /**
+     * Reject leave request
+     */
+    public function reject($id, Request $request)
+    {
+        $user = Auth::user();
+        // Hanya admin yang boleh reject
+        if (!$user->hasRole('admin')) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 403);
+        }
+        $leave = PermitEmployee::findOrFail($id);
+        if ($leave->status != PermitEmployee::STATUS_PENDING) {
+            return response()->json(['status' => 'error', 'message' => 'Cuti sudah diproses'], 400);
+        }
+        $request->validate([
+            'reject_note' => 'required|string',
+        ]);
+        $leave->status = PermitEmployee::STATUS_REJECTED;
+        $leave->approved_by_id = $user->id;
+        $leave->approved_at = now();
+        $leave->notes = $request->reject_note;
+        $leave->save();
+        // TODO: Trigger notifikasi ke karyawan
+        return response()->json(['status' => 'success', 'message' => 'Cuti ditolak', 'data' => $this->formatLeave($leave)]);
+    }
     public function index()
     {
         $user = Auth::user();
-        $leaves = PermitEmployee::with(['createdBy', 'approvedBy'])
-            ->where('created_by_id', $user->id)
-            ->orderBy('from_date', 'desc')
-            ->get()
-            ->map(function ($leave) {
-                return $this->formatLeave($leave);
-            });
+
+        // Jika user adalah admin, ambil semua data leave
+        if ($user->hasRole('admin')) {
+            $leaves = PermitEmployee::with(['createdBy', 'approvedBy'])
+                ->orderBy('from_date', 'desc')
+                ->get()
+                ->map(function ($leave) {
+                    return $this->formatLeave($leave);
+                });
+        } else {
+            // Jika user bukan admin, hanya ambil data leave milik user tersebut
+            $leaves = PermitEmployee::with(['createdBy', 'approvedBy'])
+                ->where('created_by_id', $user->id)
+                ->orderBy('from_date', 'desc')
+                ->get()
+                ->map(function ($leave) {
+                    return $this->formatLeave($leave);
+                });
+        }
 
         return response()->json([
             'status' => 'success',
