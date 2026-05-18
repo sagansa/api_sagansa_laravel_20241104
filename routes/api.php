@@ -20,7 +20,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/check-in', [PresenceController::class, 'checkIn']);
     Route::post('/check-out', [PresenceController::class, 'checkOut']);
     Route::get('/stores', [PresenceController::class, 'getStores']);
-    Route::get('/shift-stores', [AdminReportController::class, 'getShiftStores']);
+    Route::get('/shift-stores', [PresenceController::class, 'getShiftStores']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
     Route::prefix('leaves')->group(function () {
