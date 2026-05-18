@@ -41,15 +41,11 @@ class Presence extends Model
         return $this->belongsTo(User::class, 'approved_by_id');
     }
 
-    public function validation()
-    {
-        return $this->hasOne(PresenceValidation::class);
-    }
 
     // Admin-specific scopes
     public function scopeWithFullDetails($query)
     {
-        return $query->with(['createdBy', 'store', 'shiftStore', 'validation']);
+        return $query->with(['createdBy', 'store', 'shiftStore']);
     }
     
     public function scopeForDateRange($query, $startDate, $endDate)
