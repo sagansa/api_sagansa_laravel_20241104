@@ -10,6 +10,9 @@ use App\Http\Controllers\Api\AdminReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
+Route::get('/login', function () {
+    return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+})->name('login');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
