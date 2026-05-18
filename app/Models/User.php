@@ -14,6 +14,8 @@ class User extends Authenticatable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasApiTokens, HasRoles;
 
+    protected $connection = 'mysql_auth';
+
     /**
      * The attributes that are mass assignable.
      *

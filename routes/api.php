@@ -56,5 +56,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Leave management routes
         Route::get('leaves', [AdminLeaveController::class, 'index']);
+        Route::get('leaves/{id}', [AdminLeaveController::class, 'show']);
+        Route::post('leaves/{id}/approve', [AdminLeaveController::class, 'approve']);
+        Route::post('leaves/{id}/reject', [AdminLeaveController::class, 'reject']);
+        Route::post('leaves/export', [AdminLeaveController::class, 'export']);
      });
 });

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exports\PresenceExport;
 use App\Models\Presence;
+use App\Models\PermitEmployee;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
@@ -40,6 +41,60 @@ class ExportService
             // Get file info
             $fileSize = Storage::disk('public')->size($filePath);
             $recordCount = $this->getRecordCount($filters);
+
+            return [
+                'id' => $jobId,
+                'status' => 'completed',
+                'progress' => 100,
+                'file_url' => Storage::disk('public')->url($filePath),
+                'file_name' => basename($filePath),
+                'file_size' => $fileSize,
+                'total_records' => $recordCount,
+                'format' => $format,
+                'created_at' => now()->toISOString(),
+                'completed_at' => now()->toISOString(),
+            ];
+
+        } catch (\Exception $e) {
+            return [
+                'id' => $jobId,
+                'status' => 'failed',
+                'progress' => 0,
+                'error_message' => $e->getMessage(),
+                'created_at' => now()->toISOString(),
+            ];
+        }
+    }
+
+    /**
+     * Export leave data to specified format
+     */
+    public function exportLeaves(array $filters, string $format): array
+    {
+        $jobId = Str::uuid()->toString();
+        $timestamp = now()->format('Y-m-d_H-i-s');
+        
+        // Generate filename based on format and filters
+        $filename = $this->generateLeaveFilename($filters, $format, $timestamp);
+        
+        try {
+            switch ($format) {
+                case 'excel':
+                    $filePath = $this->exportLeavesToExcel($filters, $filename);
+                    break;
+                case 'pdf':
+                    $filePath = $this->exportLeavesToPdf($filters, $filename);
+                    break;
+                case 'csv':
+                    $filePath = $this->exportLeavesToCsv($filters, $filename);
+                    break;
+                default:
+                    throw new \InvalidArgumentException("Unsupported export format: {$format}");
+            }
+
+            // Get file info
+            $fileSize = Storage::disk('public')->size($filePath);
+            $recordCount = $this->getLeaveRecordCount($filters);
 
             return [
                 'id' => $jobId,
@@ -296,5 +351,201 @@ class ExportService
         } else {
             return '10+ minutes';
         }
+    }
+
+    /**
+     * Helper methods for leave export
+     */
+    private function exportLeavesToExcel(array $filters, string $filename): string
+    {
+        $filePath = "exports/{$filename}";
+        $leaves = $this->getLeaveData($filters);
+        
+        // Create simple Excel export for now
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        
+        // Headers
+        $headers = ['ID', 'Karyawan', 'Jenis Cuti', 'Tanggal Mulai', 'Tanggal Selesai', 'Status', 'Catatan', 'Dibuat'];
+        $sheet->fromArray($headers, null, 'A1');
+        
+        // Data
+        $row = 2;
+        foreach ($leaves as $leave) {
+            $sheet->fromArray([
+                $leave->id,
+                $leave->createdBy->name ?? 'Unknown',
+                PermitEmployee::getReasonText($leave->reason),
+                $leave->from_date->format('d/m/Y'),
+                $leave->until_date->format('d/m/Y'),
+                PermitEmployee::getStatusText($leave->status),
+                $leave->notes ?? '',
+                $leave->created_at->format('d/m/Y H:i')
+            ], null, "A{$row}");
+            $row++;
+        }
+        
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save(storage_path("app/public/{$filePath}"));
+        
+        return $filePath;
+    }
+
+    private function exportLeavesToPdf(array $filters, string $filename): string
+    {
+        $leaves = $this->getLeaveData($filters);
+        
+        $pdf = Pdf::loadView('exports.leave-pdf', [
+            'leaves' => $leaves,
+            'filters' => $filters,
+            'title' => 'Data Cuti Report',
+            'generated_at' => now()->format('d/m/Y H:i:s'),
+        ]);
+
+        $pdf->setPaper('a4', 'landscape');
+        
+        $filePath = "exports/{$filename}";
+        Storage::disk('public')->put($filePath, $pdf->output());
+        
+        return $filePath;
+    }
+
+    private function exportLeavesToCsv(array $filters, string $filename): string
+    {
+        $leaves = $this->getLeaveData($filters);
+        $filePath = "exports/{$filename}";
+        
+        $csvData = [];
+        // Headers
+        $csvData[] = ['ID', 'Karyawan', 'Jenis Cuti', 'Tanggal Mulai', 'Tanggal Selesai', 'Status', 'Catatan', 'Dibuat'];
+        
+        // Data
+        foreach ($leaves as $leave) {
+            $csvData[] = [
+                $leave->id,
+                $leave->createdBy->name ?? 'Unknown',
+                PermitEmployee::getReasonText($leave->reason),
+                $leave->from_date->format('d/m/Y'),
+                $leave->until_date->format('d/m/Y'),
+                PermitEmployee::getStatusText($leave->status),
+                $leave->notes ?? '',
+                $leave->created_at->format('d/m/Y H:i')
+            ];
+        }
+        
+        $file = fopen(storage_path("app/public/{$filePath}"), 'w');
+        foreach ($csvData as $row) {
+            fputcsv($file, $row);
+        }
+        fclose($file);
+        
+        return $filePath;
+    }
+
+    private function getLeaveData(array $filters)
+    {
+        $query = PermitEmployee::with(['createdBy', 'approvedBy'])
+            ->whereHas('createdBy', function ($q) {
+                $q->role('staff');
+            });
+
+        // Apply filters
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('from_date', '>=', $filters['date_from']);
+        }
+
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('until_date', '<=', $filters['date_to']);
+        }
+
+        if (!empty($filters['user_id'])) {
+            $query->where('created_by_id', $filters['user_id']);
+        }
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (!empty($filters['reason'])) {
+            $query->where('reason', $filters['reason']);
+        }
+
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+            $query->whereHas('createdBy', function ($q) use ($search) {
+                $q->role('staff')
+                  ->where(function ($subQ) use ($search) {
+                      $subQ->where('name', 'like', "%{$search}%")
+                           ->orWhere('email', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        return $query->orderBy('created_at', 'desc')->get();
+    }
+
+    private function getLeaveRecordCount(array $filters): int
+    {
+        $query = PermitEmployee::whereHas('createdBy', function ($q) {
+            $q->role('staff');
+        });
+
+        // Apply same filters as export
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('from_date', '>=', $filters['date_from']);
+        }
+
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('until_date', '<=', $filters['date_to']);
+        }
+
+        if (!empty($filters['user_id'])) {
+            $query->where('created_by_id', $filters['user_id']);
+        }
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (!empty($filters['reason'])) {
+            $query->where('reason', $filters['reason']);
+        }
+
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+            $query->whereHas('createdBy', function ($q) use ($search) {
+                $q->role('staff')
+                  ->where(function ($subQ) use ($search) {
+                      $subQ->where('name', 'like', "%{$search}%")
+                           ->orWhere('email', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        return $query->count();
+    }
+
+    private function generateLeaveFilename(array $filters, string $format, string $timestamp): string
+    {
+        $name = 'leave_data';
+        
+        // Add date range to filename if specified
+        if (!empty($filters['date_from']) || !empty($filters['date_to'])) {
+            $dateFrom = $filters['date_from'] ?? 'start';
+            $dateTo = $filters['date_to'] ?? 'end';
+            $name .= "_{$dateFrom}_to_{$dateTo}";
+        }
+
+        // Add employee name if single employee selected
+        if (!empty($filters['user_id'])) {
+            $user = \App\Models\User::find($filters['user_id']);
+            if ($user) {
+                $name .= '_' . Str::slug($user->name);
+            }
+        }
+
+        $extension = $this->getFileExtension($format);
+        
+        return "{$name}_{$timestamp}.{$extension}";
     }
 }

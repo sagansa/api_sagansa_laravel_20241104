@@ -15,6 +15,12 @@ class PermitEmployee extends Model
     protected $casts = [
         'from_date' => 'date',
         'until_date' => 'date',
+        'approved_at' => 'datetime',
+    ];
+
+    protected $fillable = [
+        'reason', 'from_date', 'until_date', 'notes', 'status', 
+        'created_by_id', 'approved_by_id', 'approved_at', 'admin_notes'
     ];
 
     // Reason constants
