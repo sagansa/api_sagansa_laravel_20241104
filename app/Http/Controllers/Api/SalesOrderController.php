@@ -56,8 +56,8 @@ class SalesOrderController extends Controller
                 ->get();
 
             $order->items = $items;
-            $order->image_delivery_url = $order->image_delivery ? url('storage/' . $order->image_delivery) : null;
-            $order->image_payment_url = $order->image_payment ? url('storage/' . $order->image_payment) : null;
+            $order->image_delivery_url = $this->getStorageUrl($order->image_delivery);
+            $order->image_payment_url = $this->getStorageUrl($order->image_payment);
 
             return response()->json([
                 'success' => true,
@@ -104,8 +104,8 @@ class SalesOrderController extends Controller
                 ->get();
 
             $order->items = $items;
-            $order->image_delivery_url = $order->image_delivery ? url('storage/' . $order->image_delivery) : null;
-            $order->image_payment_url = $order->image_payment ? url('storage/' . $order->image_payment) : null;
+            $order->image_delivery_url = $this->getStorageUrl($order->image_delivery);
+            $order->image_payment_url = $this->getStorageUrl($order->image_payment);
             return $order;
         });
 
@@ -185,8 +185,26 @@ class SalesOrderController extends Controller
             'data' => [
                 'receipt_no' => $receiptNo,
                 'delivery_status' => 3,
-                'image_delivery_url' => url('storage/' . $imagePath)
+                'image_delivery_url' => $this->getStorageUrl($imagePath)
             ]
         ]);
+    }
+
+    private function getStorageUrl($path)
+    {
+        if (!$path) {
+            return null;
+        }
+
+        $baseUrl = env('STORAGE_URL');
+        if (!$baseUrl) {
+            if (request()->getHost() === 'api.sagansa.id') {
+                $baseUrl = 'https://sagansa.id';
+            } else {
+                $baseUrl = url('/');
+            }
+        }
+
+        return rtrim($baseUrl, '/') . '/storage/' . ltrim($path, '/');
     }
 }
