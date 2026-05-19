@@ -9,6 +9,16 @@ use App\Http\Controllers\Api\AdminLeaveController;
 use App\Http\Controllers\Api\AdminReportController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/app-version', function () {
+    return response()->json([
+        'latest_version' => '1.0.1',
+        'version_code' => 2,
+        'force_update' => false,
+        'download_url' => 'https://api.sagansa.id/downloads/presence-latest.apk',
+        'release_notes' => 'Pembaruan aplikasi untuk performa yang lebih baik dan perbaikan bug.'
+    ]);
+});
+
 Route::post('/login', [AuthController::class, 'login']);
 Route::get('/login', function () {
     return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);

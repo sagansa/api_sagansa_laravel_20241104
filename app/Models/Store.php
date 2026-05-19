@@ -16,14 +16,16 @@ class Store extends Model
         'latitude',
         'longitude',
         'radius',
-        'is_active'
+        'is_active',
+        'daily_salary_amount'
     ];
 
     protected $casts = [
         'latitude' => 'float',
         'longitude' => 'float',
         'radius' => 'integer',
-        'is_active' => 'boolean'
+        'is_active' => 'boolean',
+        'daily_salary_amount' => 'decimal:2'
     ];
 
     public function shiftStores()

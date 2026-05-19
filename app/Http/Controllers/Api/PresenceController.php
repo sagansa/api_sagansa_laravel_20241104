@@ -371,6 +371,8 @@ class PresenceController extends Controller
                 'latitude_out' => 'required|numeric|between:-90,90',
                 'longitude_out' => 'required|numeric|between:-180,180',
                 'image_out' => 'required|image|mimes:jpeg,png,jpg',
+                'daily_salary_amount' => 'required|numeric|min:0',
+                'daily_salary_payment_type_id' => 'required|exists:payment_types,id',
             ]);
 
             // Cari store terdekat yang sesuai dengan radius
@@ -407,6 +409,18 @@ class PresenceController extends Controller
                 $presence->longitude_out = $request->longitude_out;
                 $presence->image_out = $imagePath;
                 $presence->save();
+
+                // Buat data Daily Salary
+                \App\Models\DailySalary::create([
+                    'store_id' => $presence->store_id,
+                    'shift_store_id' => $presence->shift_store_id,
+                    'date' => $now->toDateString(),
+                    'amount' => $request->daily_salary_amount,
+                    'payment_type_id' => $request->daily_salary_payment_type_id,
+                    'status' => 1,
+                    'presence_id' => $presence->id,
+                    'created_by_id' => $user->id,
+                ]);
 
                 return response()->json([
                     'status' => 'success',
@@ -458,7 +472,7 @@ class PresenceController extends Controller
     public function getStores()
     {
         $stores = Store::where('status', '<>', '8')
-            ->select('id', 'nickname', 'latitude', 'longitude', 'radius')
+            ->select('id', 'nickname', 'latitude', 'longitude', 'radius', 'daily_salary_amount')
             ->get()
             ->map(function ($store) {
                 return [
@@ -466,7 +480,8 @@ class PresenceController extends Controller
                     'nickname' => $store->nickname,
                     'latitude' => (string) $store->latitude,
                     'longitude' => (string) $store->longitude,
-                    'radius' => (string) $store->radius
+                    'radius' => (string) $store->radius,
+                    'daily_salary_amount' => (string) ($store->daily_salary_amount ?? 50000)
                 ];
             });
 
