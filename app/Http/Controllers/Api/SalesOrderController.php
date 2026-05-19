@@ -196,15 +196,6 @@ class SalesOrderController extends Controller
             return null;
         }
 
-        $baseUrl = env('STORAGE_URL');
-        if (!$baseUrl) {
-            if (request()->getHost() === 'api.sagansa.id') {
-                $baseUrl = 'https://sagansa.id';
-            } else {
-                $baseUrl = url('/');
-            }
-        }
-
-        return rtrim($baseUrl, '/') . '/storage/' . ltrim($path, '/');
+        return asset('storage/' . ltrim($path, '/'));
     }
 }
