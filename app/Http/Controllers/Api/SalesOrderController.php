@@ -29,7 +29,7 @@ class SalesOrderController extends Controller
                     'sales_orders.received_by',
                     'sales_orders.image_delivery',
                     'sales_orders.image_payment',
-                    'stores.name as store_name',
+                    'stores.nickname as store_name',
                     'online_shop_providers.name as provider_name',
                     'delivery_services.name as delivery_service_name',
                     'sales_orders.delivery_date'
@@ -81,7 +81,7 @@ class SalesOrderController extends Controller
                 'sales_orders.received_by',
                 'sales_orders.image_delivery',
                 'sales_orders.image_payment',
-                'stores.name as store_name',
+                'stores.nickname as store_name',
                 'online_shop_providers.name as provider_name',
                 'delivery_services.name as delivery_service_name',
                 'sales_orders.delivery_date'
@@ -91,7 +91,7 @@ class SalesOrderController extends Controller
             ->paginate($perPage);
 
         // Map items for each order in the paginated response
-        $itemsData = $orders->getCollection()->map(function($order) {
+        $itemsData = $orders->getCollection()->map(function ($order) {
             $items = DB::table('detail_sales_orders')
                 ->join('products', 'detail_sales_orders.product_id', '=', 'products.id')
                 ->leftJoin('units', 'products.unit_id', '=', 'units.id')
