@@ -9,13 +9,38 @@ use App\Http\Controllers\Api\AdminLeaveController;
 use App\Http\Controllers\Api\AdminReportController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/app-version', function () {
+Route::get('/app-version', function (\Illuminate\Http\Request $request) {
+    $appName = $request->query('app_name', 'presence');
+    
+    $latestVersion = \Illuminate\Support\Facades\DB::table('app_versions')
+        ->where('app_name', $appName)
+        ->where('is_active', true)
+        ->orderBy('build_number', 'desc')
+        ->first();
+        
+    if (!$latestVersion) {
+        return response()->json([
+            'latest_version' => '1.0.0',
+            'version_code' => 1,
+            'force_update' => false,
+            'download_url' => '',
+            'release_notes' => 'No active version found for this app.'
+        ]);
+    }
+    
+    // Construct the download URL using the storage path.
+    // If on local/staging/production, we want to point to the admin app's public URL 
+    // or relative to the current host if sharing same storage symlinks.
+    $downloadUrl = $latestVersion->apk_file 
+        ? url('storage/' . $latestVersion->apk_file) 
+        : '';
+        
     return response()->json([
-        'latest_version' => '1.0.1',
-        'version_code' => 2,
-        'force_update' => false,
-        'download_url' => 'https://api.sagansa.id/downloads/presence-latest.apk',
-        'release_notes' => 'Pembaruan aplikasi untuk performa yang lebih baik dan perbaikan bug.'
+        'latest_version' => $latestVersion->version_code,
+        'version_code' => (int) $latestVersion->build_number,
+        'force_update' => (bool) $latestVersion->is_force_update,
+        'download_url' => $downloadUrl,
+        'release_notes' => $latestVersion->release_notes ?? 'Pembaruan aplikasi untuk performa yang lebih baik dan perbaikan bug.'
     ]);
 });
 
@@ -32,6 +57,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/stores', [PresenceController::class, 'getStores']);
     Route::get('/shift-stores', [PresenceController::class, 'getShiftStores']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    // Sales Order Delivery Routes
+    Route::get('/sales-orders/search', [\App\Http\Controllers\Api\SalesOrderController::class, 'search']);
+    Route::post('/sales-orders/delivery-update', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateDelivery']);
 
     Route::prefix('leaves')->group(function () {
         Route::get('/', [LeaveController::class, 'index']);
