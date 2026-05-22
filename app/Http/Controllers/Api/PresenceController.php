@@ -484,14 +484,40 @@ class PresenceController extends Controller
             return (int) $presenceUserId;
         }
 
-        Log::error('Presence user mapping not found', [
+        $existingIdOwner = DB::table('users')
+            ->where('id', $authUser->id)
+            ->first(['id', 'email']);
+
+        if (!$existingIdOwner) {
+            DB::table('users')->insert([
+                'id' => $authUser->id,
+                'name' => $authUser->name,
+                'email' => $authUser->email,
+                'password' => $authUser->password,
+                'email_verified_at' => $authUser->email_verified_at,
+                'remember_token' => $authUser->remember_token,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            Log::info('Presence user mapping created from auth user', [
+                'auth_user_id' => $authUser->id,
+                'auth_user_email' => $authUser->email,
+            ]);
+
+            return (int) $authUser->id;
+        }
+
+        Log::error('Presence user mapping not found and auth id is already used', [
             'auth_user_id' => $authUser->id,
             'auth_user_email' => $authUser->email,
+            'existing_user_id' => $existingIdOwner->id,
+            'existing_user_email' => $existingIdOwner->email,
         ]);
 
         throw new HttpResponseException(response()->json([
             'status' => 'error',
-            'message' => 'User presensi tidak ditemukan di database utama. Hubungi administrator untuk sinkronisasi user.',
+            'message' => 'User presensi tidak dapat disinkronkan otomatis karena ID sudah digunakan. Hubungi administrator.',
         ], 422));
     }
 
