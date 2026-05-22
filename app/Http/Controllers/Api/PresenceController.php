@@ -8,8 +8,10 @@ use App\Models\Store;
 use App\Models\ShiftStore;
 use App\Models\PermitEmployee;
 use Illuminate\Http\Request;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
@@ -18,6 +20,7 @@ class PresenceController extends Controller
     public function getUserPresence(Request $request)
     {
         $user = Auth::user();
+        $presenceUserId = $this->resolvePresenceUserId($user);
         $now = Carbon::now();
         $today = Carbon::today();
         $toleranceEnd = $today->copy()->addHours(3); // Toleransi sampai jam 3 pagi
@@ -26,7 +29,7 @@ class PresenceController extends Controller
         if ($now->lt($toleranceEnd)) {
             $yesterday = Carbon::yesterday();
             $todayPresence = Presence::with(['store', 'shiftStore'])
-                ->where('created_by_id', $user->id)
+                ->where('created_by_id', $presenceUserId)
                 ->whereDate('check_in', $yesterday)
                 ->whereNull('check_out')
                 ->first();
@@ -34,21 +37,21 @@ class PresenceController extends Controller
             // Jika tidak ada presensi hari kemarin yang belum checkout, cek hari ini
             if (!$todayPresence) {
                 $todayPresence = Presence::with(['store', 'shiftStore'])
-                    ->where('created_by_id', $user->id)
+                    ->where('created_by_id', $presenceUserId)
                     ->whereDate('check_in', $today)
                     ->first();
             }
         } else {
             // Di luar toleransi, ambil presensi hari ini
             $todayPresence = Presence::with(['store', 'shiftStore'])
-                ->where('created_by_id', $user->id)
+                ->where('created_by_id', $presenceUserId)
                 ->whereDate('check_in', $today)
                 ->first();
         }
 
         // Ambil presensi sebelumnya
         $previousPresences = Presence::with(['store', 'shiftStore'])
-            ->where('created_by_id', $user->id)
+            ->where('created_by_id', $presenceUserId)
             ->where(function ($query) use ($todayPresence) {
                 if ($todayPresence) {
                     $query->where('check_in', '<', $todayPresence->check_in);
@@ -172,10 +175,11 @@ class PresenceController extends Controller
     {
         try {
             $user = Auth::user();
+            $presenceUserId = $this->resolvePresenceUserId($user);
             $now = Carbon::now();
 
             // Cek apakah user sedang dalam masa cuti/izin
-            $activeLeave = PermitEmployee::where('created_by_id', $user->id)
+            $activeLeave = PermitEmployee::where('created_by_id', $presenceUserId)
                 ->where('status', PermitEmployee::STATUS_APPROVED)
                 ->where(function ($query) use ($now) {
                     $query->whereDate('from_date', '<=', $now)
@@ -209,7 +213,7 @@ class PresenceController extends Controller
             }
 
             // Cek apakah sudah ada presensi hari ini
-            $existingPresence = Presence::where('created_by_id', $user->id)
+            $existingPresence = Presence::where('created_by_id', $presenceUserId)
                 ->whereDate('check_in', $now->toDateString())
                 ->first();
 
@@ -287,7 +291,7 @@ class PresenceController extends Controller
 
             // Buat presensi baru
             $presence = new Presence([
-                'created_by_id' => $user->id,
+                'created_by_id' => $presenceUserId,
                 'store_id' => $request->store_id,
                 'shift_store_id' => $request->shift_store_id,
                 'status' => $request->status,
@@ -324,10 +328,11 @@ class PresenceController extends Controller
     {
         try {
             $user = Auth::user();
+            $presenceUserId = $this->resolvePresenceUserId($user);
             $now = Carbon::now();
 
             // Cari presensi yang belum checkout
-            $presence = Presence::where('created_by_id', $user->id)
+            $presence = Presence::where('created_by_id', $presenceUserId)
                 ->whereNull('check_out')
                 ->orderBy('check_in', 'desc')
                 ->first();
@@ -419,7 +424,7 @@ class PresenceController extends Controller
                     'payment_type_id' => $request->daily_salary_payment_type_id,
                     'status' => 1,
                     'presence_id' => $presence->id,
-                    'created_by_id' => $user->id,
+                    'created_by_id' => $presenceUserId,
                 ]);
 
                 return response()->json([
@@ -467,6 +472,27 @@ class PresenceController extends Controller
         $distance = $earthRadius * $c;
 
         return $distance; // Hasil dalam meter
+    }
+
+    private function resolvePresenceUserId($authUser): int
+    {
+        $presenceUserId = DB::table('users')
+            ->where('email', $authUser->email)
+            ->value('id');
+
+        if ($presenceUserId) {
+            return (int) $presenceUserId;
+        }
+
+        Log::error('Presence user mapping not found', [
+            'auth_user_id' => $authUser->id,
+            'auth_user_email' => $authUser->email,
+        ]);
+
+        throw new HttpResponseException(response()->json([
+            'status' => 'error',
+            'message' => 'User presensi tidak ditemukan di database utama. Hubungi administrator untuk sinkronisasi user.',
+        ], 422));
     }
 
     public function getStores()
