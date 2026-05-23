@@ -190,6 +190,59 @@ class SalesOrderController extends Controller
         ]);
     }
 
+    public function markReadyToShip(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'receipt_no' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 400);
+        }
+
+        $receiptNo = $request->input('receipt_no');
+
+        $order = DB::table('sales_orders')
+            ->where('receipt_no', $receiptNo)
+            ->where('for', 3)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order tidak ditemukan.',
+            ], 404);
+        }
+
+        if ((int) $order->delivery_status !== 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya order berstatus belum dikirim yang dapat diubah menjadi siap dikirim.',
+            ], 400);
+        }
+
+        DB::table('sales_orders')
+            ->where('id', $order->id)
+            ->update([
+                'delivery_status' => 4,
+                'updated_at' => now(),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Order berhasil ditandai siap dikirim.',
+            'data' => [
+                'receipt_no' => $receiptNo,
+                'delivery_status' => 4,
+            ],
+        ]);
+    }
+
     private function getStorageUrl($path)
     {
         if (!$path) {
