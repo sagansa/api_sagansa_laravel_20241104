@@ -61,10 +61,39 @@ class MediaController extends Controller
         $disk = Storage::disk('public');
 
         if (!$disk->exists($path)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'File tidak ditemukan.',
-            ], 404);
+            $fallbackUrls = [
+                'https://sagansa.id/storage/' . $path,
+                'https://www.sagansa.id/storage/' . $path,
+                'https://admin.sagansa.id/storage/' . $path,
+            ];
+
+            $downloaded = false;
+            foreach ($fallbackUrls as $url) {
+                $ch = curl_init($url);
+                curl_setopt($ch, CURLOPT_NOBODY, true);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 3);
+                curl_exec($ch);
+                $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+
+                if ($statusCode === 200) {
+                    $content = @file_get_contents($url);
+                    if ($content !== false) {
+                        $disk->put($path, $content);
+                        $downloaded = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!$downloaded) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'File tidak ditemukan.',
+                ], 404);
+            }
         }
 
         $absolutePath = $disk->path($path);
