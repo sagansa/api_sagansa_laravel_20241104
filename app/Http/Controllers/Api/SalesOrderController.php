@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
 class SalesOrderController extends Controller
@@ -13,6 +13,7 @@ class SalesOrderController extends Controller
     public function search(Request $request)
     {
         $receiptNo = $request->query('receipt_no');
+        $paymentProofPrintColumns = $this->paymentProofPrintColumns();
 
         if ($receiptNo) {
             $order = DB::table('sales_orders')
@@ -29,6 +30,7 @@ class SalesOrderController extends Controller
                     'sales_orders.received_by',
                     'sales_orders.image_delivery',
                     'sales_orders.image_payment',
+                    ...$paymentProofPrintColumns,
                     'stores.nickname as store_name',
                     'online_shop_providers.name as provider_name',
                     'delivery_services.name as delivery_service_name',
@@ -58,6 +60,7 @@ class SalesOrderController extends Controller
             $order->items = $items;
             $order->image_delivery_url = $this->getStorageUrl($order->image_delivery);
             $order->image_payment_url = $this->getStorageUrl($order->image_payment);
+            $this->appendPaymentProofPrintStatus($order);
 
             return response()->json([
                 'success' => true,
@@ -74,6 +77,25 @@ class SalesOrderController extends Controller
             ->leftJoin('delivery_services', 'sales_orders.delivery_service_id', '=', 'delivery_services.id')
             ->where('sales_orders.for', 3)
             ->whereNull('sales_orders.deleted_at')
+            ->when($request->filled('delivery_status'), function ($query) use ($request) {
+                $query->where('sales_orders.delivery_status', $request->query('delivery_status'));
+            })
+            ->when($request->boolean('has_payment_proof'), function ($query) {
+                $query->whereNotNull('sales_orders.image_payment')
+                    ->where('sales_orders.image_payment', '!=', '');
+            })
+            ->when(
+                $request->query('payment_proof_printed') === '0' && Schema::hasColumn('sales_orders', 'payment_proof_printed_at'),
+                function ($query) {
+                    $query->whereNull('sales_orders.payment_proof_printed_at');
+                }
+            )
+            ->when(
+                $request->query('payment_proof_printed') === '1' && Schema::hasColumn('sales_orders', 'payment_proof_printed_at'),
+                function ($query) {
+                    $query->whereNotNull('sales_orders.payment_proof_printed_at');
+                }
+            )
             ->select([
                 'sales_orders.id',
                 'sales_orders.receipt_no',
@@ -81,6 +103,7 @@ class SalesOrderController extends Controller
                 'sales_orders.received_by',
                 'sales_orders.image_delivery',
                 'sales_orders.image_payment',
+                ...$paymentProofPrintColumns,
                 'stores.nickname as store_name',
                 'online_shop_providers.name as provider_name',
                 'delivery_services.name as delivery_service_name',
@@ -106,6 +129,7 @@ class SalesOrderController extends Controller
             $order->items = $items;
             $order->image_delivery_url = $this->getStorageUrl($order->image_delivery);
             $order->image_payment_url = $this->getStorageUrl($order->image_payment);
+            $this->appendPaymentProofPrintStatus($order);
             return $order;
         });
 
@@ -120,6 +144,56 @@ class SalesOrderController extends Controller
                 'per_page' => $orders->perPage(),
                 'total' => $orders->total(),
             ]
+        ]);
+    }
+
+    public function markPaymentProofsPrinted(Request $request)
+    {
+        if (!Schema::hasColumn('sales_orders', 'payment_proof_printed_at')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kolom status print bukti pembayaran belum tersedia. Jalankan migration terlebih dahulu.',
+            ], 409);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'order_ids' => 'required|array|min:1',
+            'order_ids.*' => 'integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 400);
+        }
+
+        $orderIds = collect($request->input('order_ids'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $updated = DB::table('sales_orders')
+            ->whereIn('id', $orderIds)
+            ->where('for', 3)
+            ->whereNull('deleted_at')
+            ->whereNotNull('image_payment')
+            ->where('image_payment', '!=', '')
+            ->update([
+                'payment_proof_printed_at' => now(),
+                'payment_proof_print_count' => DB::raw('COALESCE(payment_proof_print_count, 0) + 1'),
+                'updated_at' => now(),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Status print bukti pembayaran berhasil diperbarui.',
+            'data' => [
+                'updated_count' => $updated,
+                'printed_at' => now()->toIso8601String(),
+            ],
         ]);
     }
 
@@ -249,6 +323,30 @@ class SalesOrderController extends Controller
             return null;
         }
 
-        return asset('storage/' . ltrim($path, '/'));
+        // Route melalui /media/{path} (MediaController) agar response selalu
+        // membawa header CORS. Hal ini menghindari masalah CORS saat file
+        // diakses cross-origin (mis. Flutter web @ localhost ke api.sagansa.id).
+        return route('media.show', ['path' => ltrim($path, '/')]);
+    }
+
+    private function paymentProofPrintColumns(): array
+    {
+        return [
+            Schema::hasColumn('sales_orders', 'payment_proof_printed_at')
+                ? 'sales_orders.payment_proof_printed_at'
+                : DB::raw('NULL as payment_proof_printed_at'),
+            Schema::hasColumn('sales_orders', 'payment_proof_print_count')
+                ? 'sales_orders.payment_proof_print_count'
+                : DB::raw('0 as payment_proof_print_count'),
+        ];
+    }
+
+    private function appendPaymentProofPrintStatus(object $order): void
+    {
+        $order->payment_proof_print_count = (int) ($order->payment_proof_print_count ?? 0);
+        $order->payment_proof_print_status = $order->payment_proof_printed_at ? 'printed' : 'not_printed';
+        $order->payment_proof_print_status_label = $order->payment_proof_printed_at
+            ? 'Sudah pernah diprint'
+            : 'Belum pernah diprint';
     }
 }

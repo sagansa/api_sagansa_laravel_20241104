@@ -15,6 +15,7 @@ return [
     |
     */
 
+    // 'paths' => ['*'] memastikan /media/{path} juga tercakup middleware CORS.
     'paths' => ['*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
@@ -27,8 +28,11 @@ return [
         env('FRONTEND_URL', 'http://localhost:3000'),
     ],
 
+    // Pattern mencakup seluruh subdomain sagansa.id (api, www, admin, ops, dll)
+    // dan origin localhost/127.0.0.1 dengan port apa pun (Flutter web, dev server).
     'allowed_origins_patterns' => [
         '#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#',
+        '#^https?://([a-z0-9-]+\.)?sagansa\.id$#',
     ],
 
     'allowed_headers' => ['*'],

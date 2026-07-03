@@ -62,7 +62,7 @@ return [
             ]) : [],
         ],
 
-        'mysql-auth' => [
+        'mysql_auth' => [
             'driver' => 'mysql',
             'url' => env('DB_AUTH_URL'),
             'host' => env('DB_AUTH_HOST', '127.0.0.1'),

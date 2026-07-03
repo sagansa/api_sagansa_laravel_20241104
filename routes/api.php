@@ -3,11 +3,20 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\LeaveController;
 use App\Http\Controllers\Api\PresenceController;
+use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\AdminPresenceController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\AdminLeaveController;
 use App\Http\Controllers\Api\AdminReportController;
+use App\Http\Controllers\Api\AdminTrackLocationController;
+use App\Http\Controllers\Api\MediaController;
 use Illuminate\Support\Facades\Route;
+
+// Media endpoint: serve storage files through Laravel so CORS headers are applied.
+// Path boleh multi-segment, contoh: /media/images/Online/Payment/xxxx.jpg
+Route::get('/media/{path}', [MediaController::class, 'show'])
+    ->where('path', '.*')
+    ->name('media.show');
 
 Route::get('/app-version', function (\Illuminate\Http\Request $request) {
     $appName = $request->query('app_name', 'presence');
@@ -28,11 +37,11 @@ Route::get('/app-version', function (\Illuminate\Http\Request $request) {
         ]);
     }
     
-    // Construct the download URL using the storage path.
-    // If on local/staging/production, we want to point to the admin app's public URL 
-    // or relative to the current host if sharing same storage symlinks.
-    $downloadUrl = $latestVersion->apk_file 
-        ? url('storage/' . $latestVersion->apk_file) 
+    // Construct the download URL via /media/{path} (MediaController) agar response
+    // selalu membawa header CORS. Hindari url('storage/...') yang diserve langsung
+    // oleh web server tanpa header CORS.
+    $downloadUrl = $latestVersion->apk_file
+        ? route('media.show', ['path' => $latestVersion->apk_file])
         : '';
         
     return response()->json([
@@ -58,10 +67,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/shift-stores', [PresenceController::class, 'getShiftStores']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
+    // Employee location tracking (mobile ingestion)
+    Route::post('/location', [LocationController::class, 'store']);
+    Route::post('/device-tokens', [LocationController::class, 'registerToken']);
+    Route::delete('/device-tokens', [LocationController::class, 'deregisterToken']);
+
     // Sales Order Delivery Routes
     Route::get('/sales-orders/search', [\App\Http\Controllers\Api\SalesOrderController::class, 'search']);
     Route::post('/sales-orders/ready-to-ship', [\App\Http\Controllers\Api\SalesOrderController::class, 'markReadyToShip']);
     Route::post('/sales-orders/delivery-update', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateDelivery']);
+    Route::post('/sales-orders/payment-proofs/printed', [\App\Http\Controllers\Api\SalesOrderController::class, 'markPaymentProofsPrinted']);
 
     Route::prefix('leaves')->group(function () {
         Route::get('/', [LeaveController::class, 'index']);
@@ -69,6 +84,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [LeaveController::class, 'show']);
         Route::put('/{id}', [LeaveController::class, 'update']);
         Route::delete('/{id}', [LeaveController::class, 'destroy']);
+    });
+
+    Route::prefix('salaries')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\SalaryController::class, 'index']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\SalaryController::class, 'show']);
     });
 
     Route::prefix('admin')->group(function () {
@@ -103,5 +123,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('leaves/{id}/approve', [AdminLeaveController::class, 'approve']);
         Route::post('leaves/{id}/reject', [AdminLeaveController::class, 'reject']);
         Route::post('leaves/export', [AdminLeaveController::class, 'export']);
+
+        // Employee location tracking (admin)
+        // Bungkus rute sensitif dengan middleware 'admin' untuk memastikan
+        // hanya user ber-peran admin yang bisa memicu pelacakan lokasi.
+        Route::middleware('admin')->group(function () {
+            Route::post('track-location/{user}', [AdminTrackLocationController::class, 'trigger']);
+            Route::get('track-location/{location_request}', [AdminTrackLocationController::class, 'showRequest']);
+            Route::get('employee-locations', [AdminTrackLocationController::class, 'latestLocations']);
+            Route::get('employee-locations/{user}', [AdminTrackLocationController::class, 'history']);
+        });
      });
 });
