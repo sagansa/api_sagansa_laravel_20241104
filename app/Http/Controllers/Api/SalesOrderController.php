@@ -23,6 +23,12 @@ class SalesOrderController extends Controller
                 ->leftJoin('delivery_services', 'sales_orders.delivery_service_id', '=', 'delivery_services.id')
                 ->leftJoin('transfer_to_accounts', 'sales_orders.transfer_to_account_id', '=', 'transfer_to_accounts.id')
                 ->leftJoin('banks', 'transfer_to_accounts.bank_id', '=', 'banks.id')
+                ->leftJoin('delivery_addresses', 'sales_orders.delivery_address_id', '=', 'delivery_addresses.id')
+                ->leftJoin('subdistricts', 'delivery_addresses.subdistrict_id', '=', 'subdistricts.id')
+                ->leftJoin('districts', 'delivery_addresses.district_id', '=', 'districts.id')
+                ->leftJoin('cities', 'delivery_addresses.city_id', '=', 'cities.id')
+                ->leftJoin('provinces', 'delivery_addresses.province_id', '=', 'provinces.id')
+                ->leftJoin('users', 'sales_orders.ordered_by_id', '=', 'users.id')
                 ->where('sales_orders.receipt_no', $receiptNo)
                 ->where('sales_orders.for', $for)
                 ->whereNull('sales_orders.deleted_at')
@@ -42,7 +48,16 @@ class SalesOrderController extends Controller
                     'sales_orders.payment_status',
                     'banks.name as bank_name',
                     'transfer_to_accounts.number as bank_account_number',
-                    'transfer_to_accounts.name as bank_account_name'
+                    'transfer_to_accounts.name as bank_account_name',
+                    'delivery_addresses.name as address_name',
+                    'delivery_addresses.recipient_name as address_recipient_name',
+                    'delivery_addresses.recipient_telp_no as address_recipient_telp_no',
+                    'delivery_addresses.address as address_detail',
+                    'subdistricts.name as address_subdistrict',
+                    'districts.name as address_district',
+                    'cities.name as address_city',
+                    'provinces.name as address_province',
+                    'users.name as ordered_by_name'
                 ])
                 ->first();
 
@@ -85,6 +100,12 @@ class SalesOrderController extends Controller
             ->leftJoin('delivery_services', 'sales_orders.delivery_service_id', '=', 'delivery_services.id')
             ->leftJoin('transfer_to_accounts', 'sales_orders.transfer_to_account_id', '=', 'transfer_to_accounts.id')
             ->leftJoin('banks', 'transfer_to_accounts.bank_id', '=', 'banks.id')
+            ->leftJoin('delivery_addresses', 'sales_orders.delivery_address_id', '=', 'delivery_addresses.id')
+            ->leftJoin('subdistricts', 'delivery_addresses.subdistrict_id', '=', 'subdistricts.id')
+            ->leftJoin('districts', 'delivery_addresses.district_id', '=', 'districts.id')
+            ->leftJoin('cities', 'delivery_addresses.city_id', '=', 'cities.id')
+            ->leftJoin('provinces', 'delivery_addresses.province_id', '=', 'provinces.id')
+            ->leftJoin('users', 'sales_orders.ordered_by_id', '=', 'users.id')
             ->where('sales_orders.for', $for)
             ->whereNull('sales_orders.deleted_at')
             ->when($request->filled('delivery_status'), function ($query) use ($request) {
@@ -122,7 +143,16 @@ class SalesOrderController extends Controller
                 'sales_orders.payment_status',
                 'banks.name as bank_name',
                 'transfer_to_accounts.number as bank_account_number',
-                'transfer_to_accounts.name as bank_account_name'
+                'transfer_to_accounts.name as bank_account_name',
+                'delivery_addresses.name as address_name',
+                'delivery_addresses.recipient_name as address_recipient_name',
+                'delivery_addresses.recipient_telp_no as address_recipient_telp_no',
+                'delivery_addresses.address as address_detail',
+                'subdistricts.name as address_subdistrict',
+                'districts.name as address_district',
+                'cities.name as address_city',
+                'provinces.name as address_province',
+                'users.name as ordered_by_name'
             ])
             ->orderBy('sales_orders.delivery_date', 'desc')
             ->orderBy('sales_orders.id', 'desc')
