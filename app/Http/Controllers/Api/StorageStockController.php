@@ -102,18 +102,9 @@ class StorageStockController extends Controller
             ], 422);
         }
 
-        $now = Carbon::now();
-
-        // 1. Validasi Waktu: Harus di atas jam 21:00
-        if ($now->format('H:i') < '21:00') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Laporan stok sisa (Stock Opname) hanya dapat dilakukan setelah pukul 21:00.'
-            ], 422);
-        }
+        $today = Carbon::now()->toDateString();
 
         // 2. Validasi Duplikasi: Hanya 1 kali sehari untuk store yang sama
-        $today = $now->toDateString();
         $existingReport = StorageStock::where('store_id', $request->store_id)
             ->where('date', $today)
             ->first();
