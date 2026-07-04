@@ -98,6 +98,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/requests/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'show']);
         Route::post('/requests/items/{id}/approve', [\App\Http\Controllers\Api\ProcurementController::class, 'approveItem']);
         Route::post('/requests/items/{id}/reject', [\App\Http\Controllers\Api\ProcurementController::class, 'rejectItem']);
+        Route::post('/requests/items/{id}/cancel', [\App\Http\Controllers\Api\ProcurementController::class, 'cancelItem']);
         Route::post('/requests/{id}/create-invoice', [\App\Http\Controllers\Api\ProcurementController::class, 'createInvoice']);
     });
 

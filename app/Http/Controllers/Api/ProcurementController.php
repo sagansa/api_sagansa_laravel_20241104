@@ -19,7 +19,7 @@ class ProcurementController extends Controller
      */
     public function products(Request $request)
     {
-        $products = Product::with('unit')->get();
+        $products = Product::with('unit')->where('payment_type_id', '!=', '3')->get();
 
         return response()->json([
             'success' => true,
@@ -41,9 +41,26 @@ class ProcurementController extends Controller
 
         $requests = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
 
+        // Hitung statistik invoice untuk user/admin
+        $userId = $request->user()->id;
+        $isAdmin = $request->user()->hasRole('admin');
+        
+        $invoiceQuery = InvoicePurchase::query();
+        if (!$isAdmin) {
+            $invoiceQuery->where('created_by_id', $userId);
+        }
+
+        $invoicesCount = [
+            'draft' => (clone $invoiceQuery)->where('order_status', 1)->count(),
+            'done' => (clone $invoiceQuery)->where('order_status', 2)->count(),
+        ];
+
         return response()->json([
             'success' => true,
-            'data' => $requests
+            'data' => $requests,
+            'meta' => [
+                'invoice_counts' => $invoicesCount
+            ]
         ]);
     }
 
@@ -90,6 +107,7 @@ class ProcurementController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity_plan' => 'required|numeric|min:1',
+            'items.*.payment_type_id' => 'nullable|in:1,2',
         ]);
 
         if ($validator->fails()) {
@@ -109,16 +127,18 @@ class ProcurementController extends Controller
 
             foreach ($request->items as $item) {
                 $product = Product::find($item['product_id']);
-                $paymentTypeId = $product->payment_type_id ?? 2; // Default to Cash (2)
+                $productDefault = $product->payment_type_id ?? 1;
+                $plannedPayment = $item['payment_type_id'] ?? $productDefault;
 
                 DetailRequest::create([
                     'request_purchase_id' => $requestPurchase->id,
                     'product_id' => $item['product_id'],
                     'quantity_plan' => $item['quantity_plan'],
                     'store_id' => $request->store_id,
-                    'payment_type_id' => $paymentTypeId,
-                    // If transfer (1), status is process (1), else approved (4)
-                    'status' => ($paymentTypeId == 1) ? '1' : '4',
+                    'payment_type_id' => $plannedPayment,
+                    // Product default Transfer (1) tetapi berencana membayar Tunai (2) -> butuh approval (1)
+                    // Selain itu -> langsung approved (4)
+                    'status' => ($productDefault == 1 && $plannedPayment == 2) ? '1' : '4',
                 ]);
             }
 
@@ -200,6 +220,43 @@ class ProcurementController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Item request ditolak.',
+            'data' => $item
+        ]);
+    }
+
+    /**
+     * Mark a specific detail request item as Cancel / Not Used (Admin only).
+     */
+    public function cancelItem($itemId, Request $request)
+    {
+        if (!$request->user()->hasRole('admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya Admin yang dapat membatalkan request item.'
+            ], 403);
+        }
+
+        $item = DetailRequest::find($itemId);
+
+        if (!$item) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item request tidak ditemukan.'
+            ], 404);
+        }
+
+        if (in_array($item->status, ['2', '3', '5', '6'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item ini tidak dapat dibatalkan (sudah selesai/ditolak/tidak aktif).'
+            ], 400);
+        }
+
+        $item->update(['status' => '6']); // Not Used
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Item request berhasil ditandai sebagai tidak digunakan.',
             'data' => $item
         ]);
     }
