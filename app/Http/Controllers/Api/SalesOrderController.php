@@ -13,6 +13,7 @@ class SalesOrderController extends Controller
     public function search(Request $request)
     {
         $receiptNo = $request->query('receipt_no');
+        $for = $request->query('for', '3');
         $paymentProofPrintColumns = $this->paymentProofPrintColumns();
 
         if ($receiptNo) {
@@ -20,8 +21,10 @@ class SalesOrderController extends Controller
                 ->leftJoin('stores', 'sales_orders.store_id', '=', 'stores.id')
                 ->leftJoin('online_shop_providers', 'sales_orders.online_shop_provider_id', '=', 'online_shop_providers.id')
                 ->leftJoin('delivery_services', 'sales_orders.delivery_service_id', '=', 'delivery_services.id')
+                ->leftJoin('transfer_to_accounts', 'sales_orders.transfer_to_account_id', '=', 'transfer_to_accounts.id')
+                ->leftJoin('banks', 'transfer_to_accounts.bank_id', '=', 'banks.id')
                 ->where('sales_orders.receipt_no', $receiptNo)
-                ->where('sales_orders.for', 3)
+                ->where('sales_orders.for', $for)
                 ->whereNull('sales_orders.deleted_at')
                 ->select([
                     'sales_orders.id',
@@ -34,7 +37,12 @@ class SalesOrderController extends Controller
                     'stores.nickname as store_name',
                     'online_shop_providers.name as provider_name',
                     'delivery_services.name as delivery_service_name',
-                    'sales_orders.delivery_date'
+                    'sales_orders.delivery_date',
+                    'sales_orders.payment_method',
+                    'sales_orders.payment_status',
+                    'banks.name as bank_name',
+                    'transfer_to_accounts.number as bank_account_number',
+                    'transfer_to_accounts.name as bank_account_name'
                 ])
                 ->first();
 
@@ -75,7 +83,9 @@ class SalesOrderController extends Controller
             ->leftJoin('stores', 'sales_orders.store_id', '=', 'stores.id')
             ->leftJoin('online_shop_providers', 'sales_orders.online_shop_provider_id', '=', 'online_shop_providers.id')
             ->leftJoin('delivery_services', 'sales_orders.delivery_service_id', '=', 'delivery_services.id')
-            ->where('sales_orders.for', 3)
+            ->leftJoin('transfer_to_accounts', 'sales_orders.transfer_to_account_id', '=', 'transfer_to_accounts.id')
+            ->leftJoin('banks', 'transfer_to_accounts.bank_id', '=', 'banks.id')
+            ->where('sales_orders.for', $for)
             ->whereNull('sales_orders.deleted_at')
             ->when($request->filled('delivery_status'), function ($query) use ($request) {
                 $query->where('sales_orders.delivery_status', $request->query('delivery_status'));
@@ -107,7 +117,12 @@ class SalesOrderController extends Controller
                 'stores.nickname as store_name',
                 'online_shop_providers.name as provider_name',
                 'delivery_services.name as delivery_service_name',
-                'sales_orders.delivery_date'
+                'sales_orders.delivery_date',
+                'sales_orders.payment_method',
+                'sales_orders.payment_status',
+                'banks.name as bank_name',
+                'transfer_to_accounts.number as bank_account_number',
+                'transfer_to_accounts.name as bank_account_name'
             ])
             ->orderBy('sales_orders.delivery_date', 'desc')
             ->orderBy('sales_orders.id', 'desc')

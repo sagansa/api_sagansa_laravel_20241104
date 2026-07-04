@@ -33,6 +33,9 @@ class SalaryController extends Controller
                 $statusText = 'processing';
             }
 
+            $deductions = $salary->deductions ?? [];
+            $hasLoan = isset($deductions['loan_installments']) && (int)$deductions['loan_installments'] > 0;
+
             return [
                 'id' => $salary->id,
                 'period' => $salary->period_start->toDateString(),
@@ -42,6 +45,7 @@ class SalaryController extends Controller
                 'paid_amount' => $salary->paid_amount !== null ? (int) $salary->paid_amount : null,
                 'status' => $statusText,
                 'paymentDate' => $salary->payment_date ? $salary->payment_date->toDateString() : null,
+                'has_loan' => $hasLoan,
             ];
         });
 
