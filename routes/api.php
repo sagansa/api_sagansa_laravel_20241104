@@ -91,6 +91,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\Api\SalaryController::class, 'show']);
     });
 
+    Route::prefix('procurement')->group(function () {
+        Route::get('/products', [\App\Http\Controllers\Api\ProcurementController::class, 'products']);
+        Route::get('/requests', [\App\Http\Controllers\Api\ProcurementController::class, 'index']);
+        Route::post('/requests', [\App\Http\Controllers\Api\ProcurementController::class, 'store']);
+        Route::get('/requests/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'show']);
+        Route::post('/requests/items/{id}/approve', [\App\Http\Controllers\Api\ProcurementController::class, 'approveItem']);
+        Route::post('/requests/items/{id}/reject', [\App\Http\Controllers\Api\ProcurementController::class, 'rejectItem']);
+        Route::post('/requests/{id}/create-invoice', [\App\Http\Controllers\Api\ProcurementController::class, 'createInvoice']);
+    });
+
     Route::prefix('admin')->group(function () {
 
         // Dashboard routes
