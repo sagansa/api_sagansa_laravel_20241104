@@ -104,6 +104,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('storage-stocks')->group(function () {
         Route::get('/products', [\App\Http\Controllers\Api\StorageStockController::class, 'products']);
+        Route::get('/today-status', [\App\Http\Controllers\Api\StorageStockController::class, 'todayStatus']);
         Route::get('/', [\App\Http\Controllers\Api\StorageStockController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\StorageStockController::class, 'store']);
         Route::get('/{id}', [\App\Http\Controllers\Api\StorageStockController::class, 'show']);

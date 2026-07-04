@@ -148,4 +148,22 @@ class StorageStockController extends Controller
             ], 201);
         });
     }
+
+    /**
+     * Check if current user has reported today
+     */
+    public function todayStatus(Request $request)
+    {
+        $today = Carbon::now()->toDateString();
+        $query = StorageStock::where('date', $today);
+        
+        if ($request->user()->hasRole('storage-staff')) {
+            $query->where('created_by_id', $request->user()->id);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'has_reported' => $query->exists()
+        ]);
+    }
 }
