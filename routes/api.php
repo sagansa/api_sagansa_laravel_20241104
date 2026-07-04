@@ -110,6 +110,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\Api\StorageStockController::class, 'show']);
     });
 
+    Route::prefix('readiness')->group(function () {
+        Route::get('/status', [\App\Http\Controllers\Api\ReadinessController::class, 'checkStatus']);
+        Route::post('/', [\App\Http\Controllers\Api\ReadinessController::class, 'store']);
+    });
+
     Route::prefix('admin')->group(function () {
 
         // Dashboard routes

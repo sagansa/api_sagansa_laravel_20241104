@@ -224,6 +224,21 @@ class PresenceController extends Controller
                 ], 400);
             }
 
+            // Validasi Kesiapan (Readiness) khusus hari Jumat
+            if ($now->isFriday()) {
+                $hasReadiness = \App\Models\Readiness::where('created_by_id', $presenceUserId)
+                    ->whereDate('created_at', $now->toDateString())
+                    ->exists();
+
+                if (!$hasReadiness) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Anda wajib mengisi form Kesiapan Diri pada hari Jumat sebelum Check-in.',
+                        'error_code' => 'READINESS_REQUIRED'
+                    ], 400);
+                }
+            }
+
             // Validasi input
             $validationRules = [
                 'store_id' => 'required|exists:stores,id',
