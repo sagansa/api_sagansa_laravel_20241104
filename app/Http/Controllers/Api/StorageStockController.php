@@ -121,7 +121,7 @@ class StorageStockController extends Controller
         if ($existingReport) {
             return response()->json([
                 'success' => false,
-                'message' => 'Laporan stok untuk toko ini sudah dilakukan hari ini. Anda tidak dapat melakukan laporan ganda untuk menghindari salah hitung.'
+                'message' => 'Laporan stok untuk gudang ini sudah dilakukan hari ini. Anda tidak dapat melakukan laporan ganda untuk menghindari salah hitung.'
             ], 422);
         }
 
