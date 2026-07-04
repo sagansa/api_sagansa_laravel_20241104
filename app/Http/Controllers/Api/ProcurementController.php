@@ -53,6 +53,7 @@ class ProcurementController extends Controller
         $invoicesCount = [
             'draft' => (clone $invoiceQuery)->where('order_status', 1)->count(),
             'done' => (clone $invoiceQuery)->where('order_status', 2)->count(),
+            'unpaid' => (clone $invoiceQuery)->where('payment_status', '!=', 3)->count(),
         ];
 
         return response()->json([
