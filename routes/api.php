@@ -102,6 +102,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/requests/{id}/create-invoice', [\App\Http\Controllers\Api\ProcurementController::class, 'createInvoice']);
     });
 
+    Route::prefix('storage-stocks')->group(function () {
+        Route::get('/products', [\App\Http\Controllers\Api\StorageStockController::class, 'products']);
+        Route::get('/', [\App\Http\Controllers\Api\StorageStockController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\StorageStockController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\StorageStockController::class, 'show']);
+    });
+
     Route::prefix('admin')->group(function () {
 
         // Dashboard routes
