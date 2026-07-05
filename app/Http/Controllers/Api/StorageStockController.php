@@ -37,9 +37,18 @@ class StorageStockController extends Controller
     {
         $query = StorageStock::with(['store', 'createdBy', 'productStorageStocks.product.unit']);
 
-        // Staff only see their own requests
+        // Staff see requests for the stores they belong to (determined by active check-in today)
         if ($request->user()->hasRole('storage-staff')) {
-            $query->where('created_by_id', $request->user()->id);
+            $today = Carbon::now()->toDateString();
+            $presence = \App\Models\Presence::where('created_by_id', $request->user()->id)
+                ->whereDate('check_in', $today)
+                ->first();
+
+            if ($presence) {
+                $query->where('store_id', $presence->store_id);
+            } else {
+                $query->where('created_by_id', $request->user()->id);
+            }
         }
 
         $requests = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
@@ -149,7 +158,15 @@ class StorageStockController extends Controller
         $query = StorageStock::where('date', $today);
         
         if ($request->user()->hasRole('storage-staff')) {
-            $query->where('created_by_id', $request->user()->id);
+            $presence = \App\Models\Presence::where('created_by_id', $request->user()->id)
+                ->whereDate('check_in', $today)
+                ->first();
+
+            if ($presence) {
+                $query->where('store_id', $presence->store_id);
+            } else {
+                $query->where('created_by_id', $request->user()->id);
+            }
         }
         
         return response()->json([

@@ -536,7 +536,7 @@ class PresenceController extends Controller
         ], 422));
     }
 
-    public function getStores()
+    public function getStores(Request $request)
     {
         $stores = Store::where('status', '<>', '8')
             ->select('id', 'nickname', 'latitude', 'longitude', 'radius', 'daily_salary_amount')

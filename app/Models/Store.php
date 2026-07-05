@@ -42,4 +42,9 @@ class Store extends Model
     {
         return $query->where('is_active', true);
     }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 }

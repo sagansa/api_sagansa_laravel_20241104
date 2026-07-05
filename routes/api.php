@@ -115,6 +115,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [\App\Http\Controllers\Api\ReadinessController::class, 'store']);
     });
 
+    Route::prefix('closing-stores')->group(function () {
+        Route::get('/active-draft', [\App\Http\Controllers\Api\ClosingStoreController::class, 'activeDraft']);
+        Route::get('/unpaid-transactions', [\App\Http\Controllers\Api\ClosingStoreController::class, 'unpaidTransactions']);
+        Route::post('/save', [\App\Http\Controllers\Api\ClosingStoreController::class, 'save']);
+        Route::post('/fuel-services', [\App\Http\Controllers\Api\ClosingStoreController::class, 'createFuelService']);
+        Route::get('/vehicles', [\App\Http\Controllers\Api\ClosingStoreController::class, 'vehicles']);
+        Route::get('/suppliers', [\App\Http\Controllers\Api\ClosingStoreController::class, 'suppliers']);
+    });
+
     Route::prefix('admin')->group(function () {
 
         // Dashboard routes
