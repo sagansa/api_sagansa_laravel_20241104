@@ -192,12 +192,39 @@ class ClosingStoreController extends Controller
     }
 
     /**
+     * Get list of fuel services for the active store of today's presence check-in.
+     */
+    public function indexFuelServices(Request $request)
+    {
+        $today = Carbon::now()->toDateString();
+        $presence = Presence::where('created_by_id', $request->user()->id)
+            ->whereDate('check_in', $today)
+            ->first();
+            
+        $query = FuelService::query()->with(['vehicle', 'supplier', 'createdBy']);
+        
+        if ($presence) {
+            $query->where('store_id', $presence->store_id);
+        }
+        
+        $fuelServices = $query->orderBy('date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->take(50)
+            ->get();
+            
+        return response()->json([
+            'success' => true,
+            'data' => $fuelServices
+        ]);
+    }
+
+    /**
      * Create inline fuel service.
      */
     public function createFuelService(Request $request)
     {
         $request->validate([
-            'closing_store_id' => 'required|exists:closing_stores,id',
+            'closing_store_id' => 'nullable|exists:closing_stores,id',
             'date' => 'required|date',
             'fuel_service' => 'required|in:1,2',
             'vehicle_id' => 'required|exists:vehicles,id',
@@ -209,10 +236,29 @@ class ClosingStoreController extends Controller
             'service_details' => 'nullable|array',
         ]);
         
-        $closingStore = ClosingStore::findOrFail($request->input('closing_store_id'));
+        $closingStoreId = $request->input('closing_store_id');
+        $storeId = null;
+        
+        if ($closingStoreId) {
+            $closingStore = ClosingStore::findOrFail($closingStoreId);
+            $storeId = $closingStore->store_id;
+        } else {
+            $today = Carbon::now()->toDateString();
+            $presence = Presence::where('created_by_id', $request->user()->id)
+                ->whereDate('check_in', $today)
+                ->first();
+            if ($presence) {
+                $storeId = $presence->store_id;
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda harus melakukan check-in presensi terlebih dahulu.'
+                ], 400);
+            }
+        }
         
         $fuelService = FuelService::create([
-            'store_id' => $closingStore->store_id,
+            'store_id' => $storeId,
             'date' => $request->input('date'),
             'fuel_service' => $request->input('fuel_service'),
             'vehicle_id' => $request->input('vehicle_id'),
@@ -227,8 +273,10 @@ class ClosingStoreController extends Controller
             'service_details' => $request->input('service_details'),
         ]);
         
-        // Automatically link it
-        $closingStore->fuelServices()->attach($fuelService->id);
+        // Automatically link it if closing_store_id was provided
+        if ($closingStoreId) {
+            $closingStore->fuelServices()->attach($fuelService->id);
+        }
         
         return response()->json([
             'success' => true,

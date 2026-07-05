@@ -119,6 +119,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/active-draft', [\App\Http\Controllers\Api\ClosingStoreController::class, 'activeDraft']);
         Route::get('/unpaid-transactions', [\App\Http\Controllers\Api\ClosingStoreController::class, 'unpaidTransactions']);
         Route::post('/save', [\App\Http\Controllers\Api\ClosingStoreController::class, 'save']);
+        Route::get('/fuel-services', [\App\Http\Controllers\Api\ClosingStoreController::class, 'indexFuelServices']);
         Route::post('/fuel-services', [\App\Http\Controllers\Api\ClosingStoreController::class, 'createFuelService']);
         Route::get('/vehicles', [\App\Http\Controllers\Api\ClosingStoreController::class, 'vehicles']);
         Route::get('/suppliers', [\App\Http\Controllers\Api\ClosingStoreController::class, 'suppliers']);
