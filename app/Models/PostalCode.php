@@ -5,10 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class Supplier extends Model
+class PostalCode extends Model
 {
     protected $connection = 'mysql';
     use HasFactory;
+
+    public $timestamps = false;
 
     protected $guarded = [];
 
@@ -32,23 +34,8 @@ class Supplier extends Model
         return $this->belongsTo(Subdistrict::class);
     }
 
-    public function bank()
+    public function suppliers()
     {
-        return $this->belongsTo(Bank::class);
-    }
-
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    public function postalCode()
-    {
-        return $this->belongsTo(PostalCode::class);
-    }
-
-    public function fuelServices()
-    {
-        return $this->hasMany(FuelService::class);
+        return $this->hasMany(Supplier::class);
     }
 }

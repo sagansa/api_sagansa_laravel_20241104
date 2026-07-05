@@ -125,6 +125,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/suppliers', [\App\Http\Controllers\Api\ClosingStoreController::class, 'suppliers']);
     });
 
+    Route::prefix('suppliers')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\SupplierController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\SupplierController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'show']);
+        Route::post('/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'update']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'destroy']);
+    });
+
+    Route::get('/provinces', [\App\Http\Controllers\Api\SupplierController::class, 'provinces']);
+    Route::get('/cities', [\App\Http\Controllers\Api\SupplierController::class, 'cities']);
+    Route::get('/districts', [\App\Http\Controllers\Api\SupplierController::class, 'districts']);
+    Route::get('/subdistricts', [\App\Http\Controllers\Api\SupplierController::class, 'subdistricts']);
+    Route::get('/postal-codes', [\App\Http\Controllers\Api\SupplierController::class, 'postalCodes']);
+    Route::get('/banks', [\App\Http\Controllers\Api\SupplierController::class, 'banks']);
+
     Route::prefix('admin')->group(function () {
 
         // Dashboard routes
