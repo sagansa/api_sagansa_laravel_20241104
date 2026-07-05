@@ -47,10 +47,15 @@ class ClosingStoreController extends Controller
         }
         
         // Find or create closing store draft
-        $closingStore = ClosingStore::where('store_id', $storeId)
+        $closingStoreQuery = ClosingStore::where('store_id', $storeId)
             ->where('shift_store_id', $shift->id)
-            ->where('date', $today)
-            ->first();
+            ->where('date', $today);
+            
+        if ($request->user()->hasRole('staff')) {
+            $closingStoreQuery->where('created_by_id', $request->user()->id);
+        }
+        
+        $closingStore = $closingStoreQuery->first();
             
         if (!$closingStore) {
             $cashFromYesterday = ClosingStore::where('store_id', $storeId)
@@ -114,28 +119,32 @@ class ClosingStoreController extends Controller
         $storeId = $presence->store_id;
         
         // Unpaid fuel services for this store
-        $fuelServices = FuelService::where('payment_type_id', 2) // Cash
+        $fuelServicesQuery = FuelService::where('payment_type_id', 2) // Cash
             ->where('status', 1) // Unpaid
             ->where('store_id', $storeId)
-            ->whereDate('date', '>=', Carbon::now()->subDays(10)->toDateString())
-            ->orderBy('date', 'desc')
-            ->get();
+            ->whereDate('date', '>=', Carbon::now()->subDays(10)->toDateString());
             
         // Unpaid daily salaries for this store
-        $dailySalaries = DailySalary::where('payment_type_id', 2) // Cash
+        $dailySalariesQuery = DailySalary::where('payment_type_id', 2) // Cash
             ->where('status', 1) // Unpaid
             ->where('store_id', $storeId)
-            ->whereDate('date', '>=', Carbon::now()->subDays(15)->toDateString())
-            ->orderBy('date', 'desc')
-            ->get();
+            ->whereDate('date', '>=', Carbon::now()->subDays(15)->toDateString());
             
         // Unpaid invoice purchases for this store
-        $invoicePurchases = InvoicePurchase::where('payment_type_id', 2) // Cash
+        $invoicePurchasesQuery = InvoicePurchase::where('payment_type_id', 2) // Cash
             ->where('status', 1) // Unpaid
             ->where('store_id', $storeId)
-            ->whereDate('date', '>=', Carbon::now()->subDays(15)->toDateString())
-            ->orderBy('date', 'desc')
-            ->get();
+            ->whereDate('date', '>=', Carbon::now()->subDays(15)->toDateString());
+            
+        if ($request->user()->hasRole('staff')) {
+            $fuelServicesQuery->where('created_by_id', $request->user()->id);
+            $dailySalariesQuery->where('created_by_id', $request->user()->id);
+            $invoicePurchasesQuery->where('created_by_id', $request->user()->id);
+        }
+        
+        $fuelServices = $fuelServicesQuery->orderBy('date', 'desc')->get();
+        $dailySalaries = $dailySalariesQuery->orderBy('date', 'desc')->get();
+        $invoicePurchases = $invoicePurchasesQuery->orderBy('date', 'desc')->get();
             
         return response()->json([
             'success' => true,
@@ -205,6 +214,10 @@ class ClosingStoreController extends Controller
         
         if ($presence) {
             $query->where('store_id', $presence->store_id);
+        }
+        
+        if ($request->user()->hasRole('staff')) {
+            $query->where('created_by_id', $request->user()->id);
         }
         
         $fuelServices = $query->orderBy('date', 'desc')
