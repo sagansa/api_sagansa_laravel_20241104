@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\AssetCategory;
+use App\Models\Presence;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -14,13 +15,16 @@ use Illuminate\Support\Facades\Validator;
 /**
  * CRUD & dashboard untuk instance aset.
  *
- * Akses berbasis PENUGASAN (assignment-based):
- *   - admin: lihat & kelola semua aset.
- *   - user biasa (termasuk storage-staff): lihat & kelola aset di mana
- *     dia adalah PIC (pic_user_id) ATAU pembuat (created_by_id).
+ * Akses HYBRID — user dapat melihat/mengelola aset bila salah satu berlaku:
+ *   1. Dia adalah admin (lihat semua).
+ *   2. Dia adalah PIC aset (pic_user_id).
+ *   3. Dia adalah pembuat aset (created_by_id).
+ *   4. Dia ber-role storage-staff DAN sedang check-in di store aset tsb
+ *      hari ini (mengikuti pola StorageStockController).
  *
- * Notifikasi pengingat juga hanya dikirim ke PIC aset yang bersangkutan
- * (lihat AssetCheckDueService).
+ * Roles tidak eksklusif (satu user bisa staff + storage-staff), sehingga
+ * rule #4 memastikan storage-staff tetap bisa akses aset store-nya walau
+ * belum di-assign sebagai PIC eksplisit.
  */
 class AssetController extends Controller
 {
@@ -356,50 +360,81 @@ class AssetController extends Controller
         ]);
     }
 
-    // ---- Assignment-based scope helpers ---------------------------------
+    // ---- Hybrid scope helpers ------------------------------------------
 
     /**
-     * Apply assignment-based scope ke query Asset. Admin lihat semua; user
-     * biasa hanya lihat aset di mana dia PIC (pic_user_id) atau pembuat
-     * (created_by_id).
+     * Apply hybrid scope ke query Asset. Admin lihat semua; user lain lihat
+     * aset di mana dia PIC/creator ATAU ber-role storage-staff di store
+     * tempat dia check-in hari ini.
      */
     private function applyAssignmentScope(Request $request, $query): void
     {
         $user = $request->user();
-        if (!$user->hasRole('admin')) {
-            $query->where(function ($q) use ($user) {
-                $q->where('pic_user_id', $user->id)
-                  ->orWhere('created_by_id', $user->id);
-            });
+        if ($user->hasRole('admin')) {
+            return;
         }
+
+        $storeId = $this->userTodayStoreId($user);
+
+        $query->where(function ($q) use ($user, $storeId) {
+            $q->where('pic_user_id', $user->id)
+              ->orWhere('created_by_id', $user->id);
+
+            // storage-staff yang sedang check-in di store -> lihat semua
+            // aset di store tsb.
+            if ($storeId !== null) {
+                $q->orWhere('store_id', $storeId);
+            }
+        });
     }
 
     /**
-     * Sama dengan applyAssignmentScope tapi untuk query builder generic
-     * (dipakai di whereHas('asset', ...) pada AssetIssue/AssetCheck).
+     * Sama dengan applyAssignmentScope, untuk query builder generic (dipakai
+     * di whereHas('asset', ...) pada AssetIssue/AssetCheck).
      */
     private function applyAssignmentScopeToQueryBuilder(Request $request, $aq): void
     {
         $user = $request->user();
-        if (!$user->hasRole('admin')) {
-            $aq->where(function ($q) use ($user) {
-                $q->where('pic_user_id', $user->id)
-                  ->orWhere('created_by_id', $user->id);
-            });
+        if ($user->hasRole('admin')) {
+            return;
         }
+
+        $storeId = $this->userTodayStoreId($user);
+
+        $aq->where(function ($q) use ($user, $storeId) {
+            $q->where('pic_user_id', $user->id)
+              ->orWhere('created_by_id', $user->id);
+            if ($storeId !== null) {
+                $q->orWhere('store_id', $storeId);
+            }
+        });
     }
 
     /**
-     * Lakukan cek 403 bila user mencoba akses aset yang tidak ditugaskan
-     * kepadanya (bukan PIC maupun creator, dan bukan admin).
+     * Cek 403 bila user tidak berhak akses aset (hybrid rules).
      */
     private function enforceAssignmentScope(Request $request, Asset $asset): void
     {
         $user = $request->user();
+        $storeId = $this->userTodayStoreId($user);
+
         $allowed = $user->hasRole('admin')
             || $asset->pic_user_id === $user->id
-            || $asset->created_by_id === $user->id;
+            || $asset->created_by_id === $user->id
+            || $storeId === $asset->store_id; // storage-staff di store tsb
 
-        abort_if(!$allowed, 403, 'Anda tidak ditugaskan ke aset ini.');
+        abort_if(!$allowed, 403, 'Anda tidak memiliki akses ke aset ini.');
+    }
+
+    /**
+     * Store tempat user check-in hari ini (polanya sama dengan
+     * StorageStockController). Null bila tidak sedang check-in.
+     */
+    private function userTodayStoreId($user): ?int
+    {
+        $presence = Presence::where('created_by_id', $user->id)
+            ->whereDate('check_in', Carbon::now()->toDateString())
+            ->first();
+        return $presence?->store_id;
     }
 }

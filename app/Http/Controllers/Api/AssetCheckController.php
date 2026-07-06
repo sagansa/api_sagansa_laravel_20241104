@@ -8,6 +8,7 @@ use App\Models\AssetCategory;
 use App\Models\AssetCheck;
 use App\Models\AssetCheckItem;
 use App\Models\AssetIssue;
+use App\Models\Presence;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,8 +18,8 @@ use Illuminate\Support\Facades\Validator;
 /**
  * Pemeriksaan aset.
  *
- * Akses berbasis PENUGASAN: hanya PIC/creator aset yang bisa submit check.
- * Admin lihat semua check.
+ * Akses HYBRID: user dapat submit/lihat check bila dia admin, PIC aset,
+ * creator aset, atau storage-staff yang check-in di store aset tsb hari ini.
  */
 class AssetCheckController extends Controller
 {
@@ -33,12 +34,16 @@ class AssetCheckController extends Controller
             'items',
         ]);
 
-        // Assignment scope: non-admin hanya lihat check dari aset miliknya.
+        // Hybrid scope via whereHas('asset').
         if (!$user->hasRole('admin')) {
-            $query->whereHas('asset', function ($aq) use ($user) {
-                $aq->where(function ($q) use ($user) {
+            $storeId = $this->userTodayStoreId($user);
+            $query->whereHas('asset', function ($aq) use ($user, $storeId) {
+                $aq->where(function ($q) use ($user, $storeId) {
                     $q->where('pic_user_id', $user->id)
                       ->orWhere('created_by_id', $user->id);
+                    if ($storeId !== null) {
+                        $q->orWhere('store_id', $storeId);
+                    }
                 });
             });
         }
@@ -126,14 +131,18 @@ class AssetCheckController extends Controller
 
         $asset = Asset::with('category')->findOrFail($request->asset_id);
 
-        // Assignment gate: hanya PIC, creator, atau admin yang boleh check.
+        // Hybrid gate: admin / PIC / creator / storage-staff di store aset.
         $user = $request->user();
-        if (!$user->hasRole('admin')
-            && $asset->pic_user_id !== $user->id
-            && $asset->created_by_id !== $user->id) {
+        $storeId = $this->userTodayStoreId($user);
+        $canCheck = $user->hasRole('admin')
+            || $asset->pic_user_id === $user->id
+            || $asset->created_by_id === $user->id
+            || $storeId === $asset->store_id;
+
+        if (!$canCheck) {
             return response()->json([
                 'success' => false,
-                'message' => 'Anda tidak ditugaskan untuk memeriksa aset ini.',
+                'message' => 'Anda tidak berhak memeriksa aset ini.',
             ], 403);
         }
 
@@ -252,5 +261,13 @@ class AssetCheckController extends Controller
                 'date' => $today,
             ],
         ]);
+    }
+
+    private function userTodayStoreId($user): ?int
+    {
+        $presence = Presence::where('created_by_id', $user->id)
+            ->whereDate('check_in', Carbon::now()->toDateString())
+            ->first();
+        return $presence?->store_id;
     }
 }
