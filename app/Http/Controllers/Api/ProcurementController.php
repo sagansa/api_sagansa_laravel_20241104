@@ -326,8 +326,6 @@ class ProcurementController extends Controller
                 // AUTO-LINK ASSET: bila produk ini ber-flag is_asset, buat satu
                 // instance Asset per unit qty. Aset akan langsung terjadwalkan
                 // next_check_at berdasarkan frekuensi kategori produk tsb.
-                // PIC default = pembuat invoice (pengguna yg mengeksekusi).
-                // Admin bisa mengganti PIC kemudian via endpoint update aset.
                 $product = Product::with('assetCategory')->find($item->product_id);
                 if ($product && $product->is_asset && $product->asset_category_id) {
                     $qty = max(1, (int) $item->quantity_plan);
@@ -338,7 +336,6 @@ class ProcurementController extends Controller
                             'product_id' => $product->id,
                             'asset_category_id' => $product->asset_category_id,
                             'store_id' => $requestPurchase->store_id,
-                            'pic_user_id' => $request->user()->id,
                             'condition' => Asset::CONDITION_BAIK,
                             'status' => Asset::STATUS_AKTIF,
                             'purchase_date' => now()->toDateString(),

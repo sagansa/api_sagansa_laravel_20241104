@@ -34,13 +34,12 @@ class AssetCheckController extends Controller
             'items',
         ]);
 
-        // Hybrid scope via whereHas('asset').
+        // Scope berbasis role+store via whereHas('asset').
         if (!$user->hasRole('admin')) {
             $storeId = $this->userTodayStoreId($user);
             $query->whereHas('asset', function ($aq) use ($user, $storeId) {
                 $aq->where(function ($q) use ($user, $storeId) {
-                    $q->where('pic_user_id', $user->id)
-                      ->orWhere('created_by_id', $user->id);
+                    $q->where('created_by_id', $user->id);
                     if ($storeId !== null) {
                         $q->orWhere('store_id', $storeId);
                     }
@@ -131,11 +130,10 @@ class AssetCheckController extends Controller
 
         $asset = Asset::with('category')->findOrFail($request->asset_id);
 
-        // Hybrid gate: admin / PIC / creator / storage-staff di store aset.
+        // Gate: admin / creator / storage-staff di store aset.
         $user = $request->user();
         $storeId = $this->userTodayStoreId($user);
         $canCheck = $user->hasRole('admin')
-            || $asset->pic_user_id === $user->id
             || $asset->created_by_id === $user->id
             || $storeId === $asset->store_id;
 

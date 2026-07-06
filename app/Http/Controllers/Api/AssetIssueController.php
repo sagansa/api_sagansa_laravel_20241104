@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AssetIssue;
+use App\Models\Presence;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -11,8 +12,8 @@ use Illuminate\Support\Facades\Validator;
 /**
  * Issue/temuan pemeriksaan aset (modul sederhana: open/closed).
  *
- * Akses berbasis PENUGASAN: hanya PIC/creator aset terkait yang bisa lihat
- * & tutup issue. Admin lihat semua.
+ * Akses berbasis role+store: admin lihat semua; user lain lihat issue dari
+ * aset yang dia buat atau aset di store tempat dia check-in hari ini.
  */
 class AssetIssueController extends Controller
 {
@@ -28,12 +29,15 @@ class AssetIssueController extends Controller
             'resolvedBy:id,name',
         ]);
 
-        // Assignment scope.
+        // Scope berbasis role+store.
         if (!$user->hasRole('admin')) {
-            $query->whereHas('asset', function ($aq) use ($user) {
-                $aq->where(function ($q) use ($user) {
-                    $q->where('pic_user_id', $user->id)
-                      ->orWhere('created_by_id', $user->id);
+            $storeId = $this->userTodayStoreId($user);
+            $query->whereHas('asset', function ($aq) use ($user, $storeId) {
+                $aq->where(function ($q) use ($user, $storeId) {
+                    $q->where('created_by_id', $user->id);
+                    if ($storeId !== null) {
+                        $q->orWhere('store_id', $storeId);
+                    }
                 });
             });
         }
@@ -78,13 +82,16 @@ class AssetIssueController extends Controller
             ], 404);
         }
 
-        // Assignment gate.
-        if (!$user->hasRole('admin')
-            && $issue->asset?->pic_user_id !== $user->id
-            && $issue->asset?->created_by_id !== $user->id) {
+        // Gate: admin / creator / storage-staff di store aset.
+        $storeId = $this->userTodayStoreId($user);
+        $allowed = $user->hasRole('admin')
+            || $issue->asset?->created_by_id === $user->id
+            || $storeId === $issue->asset?->store_id;
+
+        if (!$allowed) {
             return response()->json([
                 'success' => false,
-                'message' => 'Anda tidak ditugaskan untuk menutup issue ini.',
+                'message' => 'Anda tidak berhak menutup issue ini.',
             ], 403);
         }
 
@@ -111,5 +118,13 @@ class AssetIssueController extends Controller
             'message' => 'Issue berhasil ditutup.',
             'data' => $issue->fresh(['asset', 'resolvedBy:id,name']),
         ]);
+    }
+
+    private function userTodayStoreId($user): ?int
+    {
+        $presence = Presence::where('created_by_id', $user->id)
+            ->whereDate('check_in', Carbon::now()->toDateString())
+            ->first();
+        return $presence?->store_id;
     }
 }

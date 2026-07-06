@@ -3,19 +3,20 @@
 namespace App\Services;
 
 use App\Models\Asset;
+use App\Models\Presence;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Memproses aset yang jatuh tempo pemeriksaan dan mengirim pengingat FCM ke
- * PIC (penanggung jawab) aset yang bersangkutan.
+ * pengguna yang ber-peran terkait di store aset tersebut.
  *
- * Model akses berbasis PENUGASAN: notifikasi hanya dikirim ke:
- *   1. PIC aset (pic_user_id) — bila ada device terdaftar.
- *   2. Pembuat aset (created_by_id) — fallback bila PIC tidak punya device.
- *   3. Admin (semua) — fallback terakhir bila keduanya tidak punya device,
- *      agar tidak ada aset jatuh tempo tanpa pengingat.
+ * Penerima notifikasi (urutan):
+ *   1. User ber-role storage-staff/admin yang check-in di store aset tsb
+ *      hari ini.
+ *   2. User ber-role tsb yang pernah check-in di store tsb (30 hari terakhir).
+ *   3. Semua admin (fallback terakhir).
  */
 class AssetCheckDueService
 {
@@ -41,13 +42,13 @@ class AssetCheckDueService
 
         foreach ($due as $asset) {
             $stats['processed']++;
-            $userIds = $this->recipientsForAsset($asset);
+            $userIds = $this->recipientsForAsset($asset, $at);
 
             if (empty($userIds)) {
                 $stats['no_recipient']++;
-                Log::info('AssetCheckDue: tidak ada penerima (PIC/creator tanpa device).', [
+                Log::info('AssetCheckDue: tidak ada penerima notifikasi.', [
                     'asset_id' => $asset->id,
-                    'pic_user_id' => $asset->pic_user_id,
+                    'store_id' => $asset->store_id,
                 ]);
                 continue;
             }
@@ -72,33 +73,57 @@ class AssetCheckDueService
     }
 
     /**
-     * Penerima notifikasi untuk satu aset (berbasis penugasan). Mengembalikan
+     * Penerima notifikasi untuk satu aset (berbasis role+store). Mengembalikan
      * array user_id yang punya minimal satu device token terdaftar.
-     *
-     * Urutan prioritas: PIC → creator → admin (fallback).
      */
-    protected function recipientsForAsset(Asset $asset): array
+    protected function recipientsForAsset(Asset $asset, Carbon $at): array
     {
-        $candidates = array_filter([
-            $asset->pic_user_id,
-            $asset->created_by_id,
-        ], fn ($id) => $id !== null && $id > 0);
+        $roles = ['storage-staff', 'admin'];
+        $storeId = (int) $asset->store_id;
 
-        // Saring yang punya device token terdaftar.
-        $withDevice = [];
-        foreach ($candidates as $id) {
-            if ($this->fcm->hasDevice((int) $id)) {
-                $withDevice[] = (int) $id;
-            }
-        }
-        if (!empty($withDevice)) {
-            return $withDevice;
-        }
+        // (1) User ber-role storage-staff/admin yang check-in di store hari ini.
+        $userIds = Presence::where('store_id', $storeId)
+            ->whereDate('check_in', $at->toDateString())
+            ->pluck('created_by_id')
+            ->unique()
+            ->all();
+        $userIds = $this->filterByRoles($userIds, $roles);
+        if (!empty($userIds)) return $this->withDevice($userIds);
 
-        // Fallback: semua admin yang punya device.
+        // (2) User ber-role tsb yang pernah check-in di store (30 hari terakhir).
+        $userIds = Presence::where('store_id', $storeId)
+            ->where('check_in', '>=', $at->copy()->subDays(30)->toDateString())
+            ->pluck('created_by_id')
+            ->unique()
+            ->all();
+        $userIds = $this->filterByRoles($userIds, $roles);
+        if (!empty($userIds)) return $this->withDevice($userIds);
+
+        // (3) Fallback terakhir: semua admin.
         $adminIds = User::role('admin')->pluck('id')->all();
+        return $this->withDevice($adminIds);
+    }
+
+    /**
+     * Saring daftar userId agar hanya yang ber-min-satu role dari $roles.
+     */
+    protected function filterByRoles(array $userIds, array $roles): array
+    {
+        if (empty($userIds)) return [];
+        return User::whereIn('id', $userIds)
+            ->role($roles)
+            ->pluck('id')
+            ->all();
+    }
+
+    /**
+     * Saring daftar userId agar hanya yang punya minimal satu device token.
+     */
+    protected function withDevice(array $userIds): array
+    {
+        if (empty($userIds)) return [];
         return array_values(array_filter(
-            $adminIds,
+            $userIds,
             fn ($id) => $this->fcm->hasDevice((int) $id),
         ));
     }

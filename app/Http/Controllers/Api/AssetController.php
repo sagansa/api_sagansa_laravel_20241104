@@ -6,51 +6,27 @@ use App\Http\Controllers\Controller;
 use App\Models\Asset;
 use App\Models\AssetCategory;
 use App\Models\Presence;
-use App\Models\User;
+use App\Models\Product;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 /**
  * CRUD & dashboard untuk instance aset.
  *
- * Akses HYBRID — user dapat melihat/mengelola aset bila salah satu berlaku:
- *   1. Dia adalah admin (lihat semua).
- *   2. Dia adalah PIC aset (pic_user_id).
- *   3. Dia adalah pembuat aset (created_by_id).
- *   4. Dia ber-role storage-staff DAN sedang check-in di store aset tsb
- *      hari ini (mengikuti pola StorageStockController).
+ * Akses berbasis ROLE+STORE (bukan assignment individual):
+ *   - admin: lihat & kelola semua aset.
+ *   - user lain: lihat aset di mana dia creator ATAU aset di store tempat
+ *     dia check-in hari ini (storage-staff).
  *
- * Roles tidak eksklusif (satu user bisa staff + storage-staff), sehingga
- * rule #4 memastikan storage-staff tetap bisa akses aset store-nya walau
- * belum di-assign sebagai PIC eksplisit.
+ * Konsep PIC per-user sengaja dihapus karena penanggung jawab pemeriksaan
+ * ditentukan oleh role (admin/storage-staff) di store terkait, bukan
+ * assignment eksplisit per aset.
  */
 class AssetController extends Controller
 {
-    /**
-     * Daftar user yang potensial jadi PIC aset. Admin saja.
-     * Berguna untuk dropdown PIC di form aset.
-     */
-    public function pics(Request $request)
-    {
-        $user = $request->user();
-
-        // Admin bebas pilih siapa saja; non-admin tidak butuh daftar ini
-        // (PIC di-set admin). Tetap kembalikan diri sendiri untuk fallback UI.
-        $query = User::query();
-        if (!$user->hasRole('admin')) {
-            $query->where('id', $user->id);
-        }
-
-        $pics = $query->orderBy('name', 'asc')->get(['id', 'name', 'email']);
-
-        return response()->json([
-            'success' => true,
-            'data' => $pics,
-        ]);
-    }
-
     /**
      * Listing dengan filter. Response membawa relasi kategori, store, dan
      * counter open-issue untuk badge UI.
@@ -61,7 +37,7 @@ class AssetController extends Controller
             'category:id,name,frequency_days',
             'store:id,nickname,name',
             'product:id,name,sku',
-            'pic:id,name',
+            'createdBy:id,name',
         ])->withCount(['issues as open_issues_count' => function ($q) {
             $q->where('status', \App\Models\AssetIssue::STATUS_OPEN);
         }]);
@@ -190,7 +166,6 @@ class AssetController extends Controller
             'category',
             'store',
             'product',
-            'pic:id,name',
             'createdBy:id,name',
             'checks' => fn($q) => $q->latest('check_date')->limit(20),
             'checks.checkedBy:id,name',
@@ -216,6 +191,74 @@ class AssetController extends Controller
     /**
      * Catat aset manual (bukan dari pembelian). Foto opsional via multipart.
      */
+    /**
+     * Buat instance aset dari produk yang sudah ditandai sebagai aset
+     * (is_asset=true). Nama, kode, dan kategori otomatis diambil dari produk
+     * agar konsisten antar toko. qty unit → qty instance aset yang dibuat.
+     *
+     * Body: { product_id: int, store_id: int, qty: int }
+     */
+    public function createFromProduct(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'required|exists:products,id',
+            'store_id' => 'required|exists:stores,id',
+            'qty' => 'required|integer|min:1|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $product = Product::with('assetCategory')->find($request->product_id);
+
+        if (!$product || !$product->is_asset || !$product->asset_category_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Produk ini tidak ditandai sebagai aset. Tandai dahulu via admin.',
+            ], 422);
+        }
+
+        $qty = (int) $request->qty;
+        $created = DB::transaction(function () use ($product, $request, $qty) {
+            $nextCheckAt = $product->assetCategory
+                ? $product->assetCategory->computeNextCheckAt()
+                : Carbon::now()->addDays(30);
+
+            $ids = [];
+            for ($i = 0; $i < $qty; $i++) {
+                $asset = Asset::create([
+                    'code' => Asset::generateCode(),
+                    'name' => $product->name,
+                    'product_id' => $product->id,
+                    'asset_category_id' => $product->asset_category_id,
+                    'store_id' => $request->store_id,
+                    'condition' => Asset::CONDITION_BAIK,
+                    'status' => Asset::STATUS_AKTIF,
+                    'purchase_date' => now()->toDateString(),
+                    'next_check_at' => $nextCheckAt,
+                    'created_by_id' => $request->user()->id,
+                ]);
+                $ids[] = $asset->id;
+            }
+            return $ids;
+        });
+
+        $assets = Asset::whereIn('id', $created)
+            ->with(['category', 'store', 'product'])
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$qty} aset berhasil dibuat dari produk \"{$product->name}\".",
+            'data' => $assets,
+        ], 201);
+    }
+
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -224,7 +267,6 @@ class AssetController extends Controller
             'asset_category_id' => 'required|exists:asset_categories,id',
             'store_id' => 'required|exists:stores,id',
             'product_id' => 'nullable|exists:products,id',
-            'pic_user_id' => 'nullable|integer',
             'condition' => 'nullable|integer|in:1,2,3,4',
             'status' => 'nullable|integer|in:1,2,3',
             'purchase_date' => 'nullable|date',
@@ -246,13 +288,6 @@ class AssetController extends Controller
         $data['created_by_id'] = $request->user()->id;
         $data['condition'] = $data['condition'] ?? Asset::CONDITION_BAIK;
         $data['status'] = $data['status'] ?? Asset::STATUS_AKTIF;
-
-        // PIC default = pembuat aset bila tidak dispesifikan atau bila
-        // non-admin mencoba menetapkan PIC lain (tidak boleh).
-        $isAdmin = $request->user()->hasRole('admin');
-        if (!$isAdmin || empty($data['pic_user_id'])) {
-            $data['pic_user_id'] = $request->user()->id;
-        }
 
         // Jika next_check_at kosong, turunkan dari frekuensi kategori mulai hari ini.
         if (empty($data['next_check_at'])) {
@@ -291,7 +326,6 @@ class AssetController extends Controller
             'asset_category_id' => 'sometimes|required|exists:asset_categories,id',
             'store_id' => 'sometimes|required|exists:stores,id',
             'product_id' => 'nullable|exists:products,id',
-            'pic_user_id' => 'nullable|integer',
             'condition' => 'nullable|integer|in:1,2,3,4',
             'status' => 'nullable|integer|in:1,2,3',
             'purchase_date' => 'nullable|date',
@@ -309,11 +343,6 @@ class AssetController extends Controller
         }
 
         $data = $validator->safe()->except(['photo']);
-
-        // Hanya admin yang boleh mengganti PIC ke user lain.
-        if (!$request->user()->hasRole('admin')) {
-            unset($data['pic_user_id']);
-        }
 
         if ($request->hasFile('photo')) {
             if ($asset->photo) {
@@ -363,9 +392,9 @@ class AssetController extends Controller
     // ---- Hybrid scope helpers ------------------------------------------
 
     /**
-     * Apply hybrid scope ke query Asset. Admin lihat semua; user lain lihat
-     * aset di mana dia PIC/creator ATAU ber-role storage-staff di store
-     * tempat dia check-in hari ini.
+     * Apply scope berbasis role+store ke query Asset. Admin lihat semua;
+     * user lain lihat aset yang dia buat ATAU aset di store tempat dia
+     * check-in hari ini (storage-staff).
      */
     private function applyAssignmentScope(Request $request, $query): void
     {
@@ -377,9 +406,7 @@ class AssetController extends Controller
         $storeId = $this->userTodayStoreId($user);
 
         $query->where(function ($q) use ($user, $storeId) {
-            $q->where('pic_user_id', $user->id)
-              ->orWhere('created_by_id', $user->id);
-
+            $q->where('created_by_id', $user->id);
             // storage-staff yang sedang check-in di store -> lihat semua
             // aset di store tsb.
             if ($storeId !== null) {
@@ -402,8 +429,7 @@ class AssetController extends Controller
         $storeId = $this->userTodayStoreId($user);
 
         $aq->where(function ($q) use ($user, $storeId) {
-            $q->where('pic_user_id', $user->id)
-              ->orWhere('created_by_id', $user->id);
+            $q->where('created_by_id', $user->id);
             if ($storeId !== null) {
                 $q->orWhere('store_id', $storeId);
             }
@@ -411,7 +437,7 @@ class AssetController extends Controller
     }
 
     /**
-     * Cek 403 bila user tidak berhak akses aset (hybrid rules).
+     * Cek 403 bila user tidak berhak akses aset.
      */
     private function enforceAssignmentScope(Request $request, Asset $asset): void
     {
@@ -419,9 +445,8 @@ class AssetController extends Controller
         $storeId = $this->userTodayStoreId($user);
 
         $allowed = $user->hasRole('admin')
-            || $asset->pic_user_id === $user->id
             || $asset->created_by_id === $user->id
-            || $storeId === $asset->store_id; // storage-staff di store tsb
+            || $storeId === $asset->store_id;
 
         abort_if(!$allowed, 403, 'Anda tidak memiliki akses ke aset ini.');
     }

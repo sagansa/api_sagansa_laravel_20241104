@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\AssetCategoryController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AssetCheckController;
 use App\Http\Controllers\Api\AssetIssueController;
+use App\Http\Controllers\Api\ProductAssetConfigController;
 use Illuminate\Support\Facades\Route;
 
 // Media endpoint: serve storage files through Laravel so CORS headers are applied.
@@ -152,10 +153,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [AssetCategoryController::class, 'destroy']);
     });
 
+    // Produk ber-flag aset: listing & marking (admin).
+    Route::prefix('asset-products')->group(function () {
+        Route::get('/', [ProductAssetConfigController::class, 'index']);
+        Route::post('/{id}', [ProductAssetConfigController::class, 'update']);
+    });
+
     Route::prefix('assets')->group(function () {
         Route::get('/dashboard', [AssetController::class, 'dashboardSummary']);
-        Route::get('/pics', [AssetController::class, 'pics']);
         Route::get('/', [AssetController::class, 'index']);
+        Route::post('/from-product', [AssetController::class, 'createFromProduct']);
         Route::post('/', [AssetController::class, 'store']);
         Route::get('/{id}', [AssetController::class, 'show']);
         Route::post('/{id}', [AssetController::class, 'update']);

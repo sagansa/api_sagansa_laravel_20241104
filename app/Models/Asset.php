@@ -64,11 +64,6 @@ class Asset extends Model
         return $this->belongsTo(Product::class);
     }
 
-    public function pic(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'pic_user_id');
-    }
-
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_id');
