@@ -14,6 +14,10 @@ class Product extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'is_asset' => 'boolean',
+    ];
+
     public function unit()
     {
         return $this->belongsTo(Unit::class);
@@ -27,5 +31,25 @@ class Product extends Model
     public function detailRequests()
     {
         return $this->hasMany(DetailRequest::class);
+    }
+
+    /**
+     * Kategori aset (jika produk ditandai sebagai aset). Menentukan frekuensi
+     * pemeriksaan & checklist baku untuk instance aset yang tercipta dari
+     * pembelian produk ini.
+     */
+    public function assetCategory()
+    {
+        return $this->belongsTo(AssetCategory::class);
+    }
+
+    public function assets()
+    {
+        return $this->hasMany(Asset::class);
+    }
+
+    public function scopeAsset($query)
+    {
+        return $query->where('is_asset', true);
     }
 }

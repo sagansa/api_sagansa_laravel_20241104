@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\LocationRequest;
+use App\Services\AssetCheckDueService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -25,3 +26,18 @@ Schedule::call(function () {
             'timed_out_at' => now(),
         ]);
 })->everyFifteenMinutes();
+
+/**
+ * Pemeriksaan aset berkala: setiap pagi (06:00 WIB) cari aset aktif yang
+ * next_check_at-nya jatuh pada hari ini atau sudah lewat, lalu kirim push
+ * FCM 'asset_check_due' ke seluruh user ber-role storage-staff/manager/admin
+ * yang sedang aktif di store terkait. Diproses oleh AssetCheckDueService.
+ *
+ * Catatan: APP_TIMEZONE sebaiknya diset 'Asia/Jakarta' agar dailyAt('06:00')
+ * benar-benar jam 6 pagi WIB.
+ */
+Schedule::call(function () {
+    app(AssetCheckDueService::class)->processDueChecks();
+})->dailyAt('06:00')
+    ->name('asset-checks:daily')
+    ->withoutOverlapping();

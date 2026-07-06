@@ -10,6 +10,10 @@ use App\Http\Controllers\Api\AdminLeaveController;
 use App\Http\Controllers\Api\AdminReportController;
 use App\Http\Controllers\Api\AdminTrackLocationController;
 use App\Http\Controllers\Api\MediaController;
+use App\Http\Controllers\Api\AssetCategoryController;
+use App\Http\Controllers\Api\AssetController;
+use App\Http\Controllers\Api\AssetCheckController;
+use App\Http\Controllers\Api\AssetIssueController;
 use Illuminate\Support\Facades\Route;
 
 // Media endpoint: serve storage files through Laravel so CORS headers are applied.
@@ -139,6 +143,36 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subdistricts', [\App\Http\Controllers\Api\SupplierController::class, 'subdistricts']);
     Route::get('/postal-codes', [\App\Http\Controllers\Api\SupplierController::class, 'postalCodes']);
     Route::get('/banks', [\App\Http\Controllers\Api\SupplierController::class, 'banks']);
+
+    // Asset Management (kategorisasi produk + pemeriksaan berkala + issue).
+    Route::prefix('asset-categories')->group(function () {
+        Route::get('/', [AssetCategoryController::class, 'index']);
+        Route::post('/', [AssetCategoryController::class, 'store']);
+        Route::post('/{id}', [AssetCategoryController::class, 'update']);
+        Route::delete('/{id}', [AssetCategoryController::class, 'destroy']);
+    });
+
+    Route::prefix('assets')->group(function () {
+        Route::get('/dashboard', [AssetController::class, 'dashboardSummary']);
+        Route::get('/pics', [AssetController::class, 'pics']);
+        Route::get('/', [AssetController::class, 'index']);
+        Route::post('/', [AssetController::class, 'store']);
+        Route::get('/{id}', [AssetController::class, 'show']);
+        Route::post('/{id}', [AssetController::class, 'update']);
+        Route::delete('/{id}', [AssetController::class, 'destroy']);
+    });
+
+    Route::prefix('asset-checks')->group(function () {
+        Route::get('/today-status/{assetId}', [AssetCheckController::class, 'checkTodayStatus']);
+        Route::get('/', [AssetCheckController::class, 'index']);
+        Route::post('/', [AssetCheckController::class, 'store']);
+        Route::get('/{id}', [AssetCheckController::class, 'show']);
+    });
+
+    Route::prefix('asset-issues')->group(function () {
+        Route::get('/', [AssetIssueController::class, 'index']);
+        Route::post('/{id}/close', [AssetIssueController::class, 'close']);
+    });
 
     Route::prefix('admin')->group(function () {
 

@@ -8,6 +8,7 @@ use App\Models\DetailRequest;
 use App\Models\InvoicePurchase;
 use App\Models\DetailInvoice;
 use App\Models\Product;
+use App\Models\Asset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -310,20 +311,54 @@ class ProcurementController extends Controller
                 'total_price' => 0,
             ]);
 
+            // Counter untuk lapor balik jumlah aset yang dibuat (info UI).
+            $assetsCreated = 0;
+
             foreach ($approvedItems as $item) {
-                DetailInvoice::create([
+                $detailInvoice = DetailInvoice::create([
                     'invoice_purchase_id' => $invoice->id,
                     'detail_request_id' => $item->id,
                     'quantity_product' => $item->quantity_plan,
                     'subtotal_invoice' => 0,
                     'status' => '3',
                 ]);
+
+                // AUTO-LINK ASSET: bila produk ini ber-flag is_asset, buat satu
+                // instance Asset per unit qty. Aset akan langsung terjadwalkan
+                // next_check_at berdasarkan frekuensi kategori produk tsb.
+                // PIC default = pembuat invoice (pengguna yg mengeksekusi).
+                // Admin bisa mengganti PIC kemudian via endpoint update aset.
+                $product = Product::with('assetCategory')->find($item->product_id);
+                if ($product && $product->is_asset && $product->asset_category_id) {
+                    $qty = max(1, (int) $item->quantity_plan);
+                    for ($i = 0; $i < $qty; $i++) {
+                        Asset::create([
+                            'code' => Asset::generateCode(),
+                            'name' => $product->name,
+                            'product_id' => $product->id,
+                            'asset_category_id' => $product->asset_category_id,
+                            'store_id' => $requestPurchase->store_id,
+                            'pic_user_id' => $request->user()->id,
+                            'condition' => Asset::CONDITION_BAIK,
+                            'status' => Asset::STATUS_AKTIF,
+                            'purchase_date' => now()->toDateString(),
+                            'next_check_at' => $product->assetCategory
+                                ? $product->assetCategory->computeNextCheckAt()
+                                : now()->addDays(30),
+                            'source_detail_invoice_id' => $detailInvoice->id,
+                            'created_by_id' => $request->user()->id,
+                        ]);
+                        $assetsCreated++;
+                    }
+                }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Invoice berhasil dibuat secara otomatis.',
-                'invoice_id' => $invoice->id
+                'message' => 'Invoice berhasil dibuat secara otomatis.'
+                    . ($assetsCreated > 0 ? " {$assetsCreated} aset baru otomatis tercatat." : ''),
+                'invoice_id' => $invoice->id,
+                'assets_created' => $assetsCreated,
             ]);
         });
     }
