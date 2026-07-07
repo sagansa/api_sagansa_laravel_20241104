@@ -312,7 +312,7 @@ class SalesOrderController extends Controller
     public function markReadyToShip(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'receipt_no' => 'required|string',
+            'id' => 'required|integer',
         ]);
 
         if ($validator->fails()) {
@@ -323,10 +323,10 @@ class SalesOrderController extends Controller
             ], 400);
         }
 
-        $receiptNo = $request->input('receipt_no');
+        $orderId = (int) $request->input('id');
 
         $order = DB::table('sales_orders')
-            ->where('receipt_no', $receiptNo)
+            ->where('id', $orderId)
             ->where('for', 3)
             ->whereNull('deleted_at')
             ->first();
@@ -356,7 +356,8 @@ class SalesOrderController extends Controller
             'success' => true,
             'message' => 'Order berhasil ditandai siap dikirim.',
             'data' => [
-                'receipt_no' => $receiptNo,
+                'id' => $order->id,
+                'receipt_no' => $order->receipt_no,
                 'delivery_status' => 4,
             ],
         ]);
