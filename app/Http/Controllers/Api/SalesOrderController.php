@@ -313,6 +313,7 @@ class SalesOrderController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'id' => 'required|integer',
+            'for' => 'nullable|in:1,3',
         ]);
 
         if ($validator->fails()) {
@@ -324,10 +325,11 @@ class SalesOrderController extends Controller
         }
 
         $orderId = (int) $request->input('id');
+        $for = $request->input('for', '3');
 
         $order = DB::table('sales_orders')
             ->where('id', $orderId)
-            ->where('for', 3)
+            ->where('for', $for)
             ->whereNull('deleted_at')
             ->first();
 
