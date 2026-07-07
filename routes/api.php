@@ -120,6 +120,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [\App\Http\Controllers\Api\ReadinessController::class, 'store']);
     });
 
+    Route::prefix('hygiene')->group(function () {
+        Route::get('/rooms', [\App\Http\Controllers\Api\HygieneController::class, 'rooms']);
+        Route::get('/today-status', [\App\Http\Controllers\Api\HygieneController::class, 'todayStatus']);
+        Route::get('/', [\App\Http\Controllers\Api\HygieneController::class, 'index']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\HygieneController::class, 'show']);
+        Route::post('/', [\App\Http\Controllers\Api\HygieneController::class, 'store']);
+    });
+
     Route::prefix('closing-stores')->group(function () {
         Route::get('/active-draft', [\App\Http\Controllers\Api\ClosingStoreController::class, 'activeDraft']);
         Route::get('/unpaid-transactions', [\App\Http\Controllers\Api\ClosingStoreController::class, 'unpaidTransactions']);
@@ -161,6 +169,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('assets')->group(function () {
         Route::get('/dashboard', [AssetController::class, 'dashboardSummary']);
+        Route::get('/current-store', [AssetController::class, 'currentStore']);
         Route::get('/', [AssetController::class, 'index']);
         Route::post('/from-product', [AssetController::class, 'createFromProduct']);
         Route::post('/', [AssetController::class, 'store']);

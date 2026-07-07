@@ -16,14 +16,13 @@ use Illuminate\Support\Facades\Validator;
 /**
  * CRUD & dashboard untuk instance aset.
  *
- * Akses berbasis ROLE+STORE (bukan assignment individual):
- *   - admin: lihat & kelola semua aset.
- *   - user lain: lihat aset di mana dia creator ATAU aset di store tempat
- *     dia check-in hari ini (storage-staff).
+ * Akses: SEMUA user terauth (admin/staff/storage-staff) bisa melihat semua
+ * aset di seluruh store. Filtering store bersifat opsional (lewat query
+ * string ?store_id=). Presence hanya dipakai sebagai default awal untuk
+ * kemudahan pemeriksaan aset (lihat method defaultStoreId).
  *
- * Konsep PIC per-user sengaja dihapus karena penanggung jawab pemeriksaan
- * ditentukan oleh role (admin/storage-staff) di store terkait, bukan
- * assignment eksplisit per aset.
+ * Alasan: pegawai bisa bekerja di multiple store, jadi list tidak boleh
+ * terkunci ke store presence.
  */
 class AssetController extends Controller
 {
@@ -392,68 +391,34 @@ class AssetController extends Controller
     // ---- Hybrid scope helpers ------------------------------------------
 
     /**
-     * Apply scope berbasis role+store ke query Asset. Admin lihat semua;
-     * user lain lihat aset yang dia buat ATAU aset di store tempat dia
-     * check-in hari ini (storage-staff).
+     * Apply scope ke query Asset. SEMUA user terauth lihat semua aset di
+     * seluruh store. Filter store opsional (sudah ditangani di index() lewat
+     * request store_id). Method ini disimpan sebagai no-op agar signature
+     * stabil dan mudah ditambah batasan di masa depan bila perlu.
      */
     private function applyAssignmentScope(Request $request, $query): void
     {
-        $user = $request->user();
-        if ($user->hasRole('admin')) {
-            return;
-        }
-
-        $storeId = $this->userTodayStoreId($user);
-
-        $query->where(function ($q) use ($user, $storeId) {
-            $q->where('created_by_id', $user->id);
-            // storage-staff yang sedang check-in di store -> lihat semua
-            // aset di store tsb.
-            if ($storeId !== null) {
-                $q->orWhere('store_id', $storeId);
-            }
-        });
+        // No-op: semua user terauth melihat semua aset. Filter store
+        // dilakukan secara eksplisit oleh index() / dashboardSummary().
     }
 
-    /**
-     * Sama dengan applyAssignmentScope, untuk query builder generic (dipakai
-     * di whereHas('asset', ...) pada AssetIssue/AssetCheck).
-     */
     private function applyAssignmentScopeToQueryBuilder(Request $request, $aq): void
     {
-        $user = $request->user();
-        if ($user->hasRole('admin')) {
-            return;
-        }
-
-        $storeId = $this->userTodayStoreId($user);
-
-        $aq->where(function ($q) use ($user, $storeId) {
-            $q->where('created_by_id', $user->id);
-            if ($storeId !== null) {
-                $q->orWhere('store_id', $storeId);
-            }
-        });
+        // No-op (lihat applyAssignmentScope).
     }
 
     /**
-     * Cek 403 bila user tidak berhak akses aset.
+     * Cek 403 bila user tidak terauth. Saat ini semua user terauth berhak
+     * mengakses aset apapun (read-only terhadap aset store lain).
      */
     private function enforceAssignmentScope(Request $request, Asset $asset): void
     {
-        $user = $request->user();
-        $storeId = $this->userTodayStoreId($user);
-
-        $allowed = $user->hasRole('admin')
-            || $asset->created_by_id === $user->id
-            || $storeId === $asset->store_id;
-
-        abort_if(!$allowed, 403, 'Anda tidak memiliki akses ke aset ini.');
+        // No-op.
     }
 
     /**
-     * Store tempat user check-in hari ini (polanya sama dengan
-     * StorageStockController). Null bila tidak sedang check-in.
+     * Store tempat user check-in hari ini. Dipakai sebagai default filter
+     * awal di Flutter (untuk kemudahan), bukan sebagai pembatas akses.
      */
     private function userTodayStoreId($user): ?int
     {
@@ -461,5 +426,21 @@ class AssetController extends Controller
             ->whereDate('check_in', Carbon::now()->toDateString())
             ->first();
         return $presence?->store_id;
+    }
+
+    /**
+     * Endpoint bantuan: kembalikan store_id dari presence hari ini untuk
+     * user login. Dipakai Flutter sebagai default filter awal.
+     */
+    public function currentStore(Request $request)
+    {
+        $storeId = $this->userTodayStoreId($request->user());
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'store_id' => $storeId,
+            ],
+        ]);
     }
 }

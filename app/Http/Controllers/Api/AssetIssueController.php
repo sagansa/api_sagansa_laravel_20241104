@@ -29,17 +29,13 @@ class AssetIssueController extends Controller
             'resolvedBy:id,name',
         ]);
 
-        // Scope berbasis role+store.
+        // Admin bebas lihat semua issue (bisa filter via ?store_id=).
+        // Staff hanya lihat issue di store tempat dia presence hari ini.
         if (!$user->hasRole('admin')) {
             $storeId = $this->userTodayStoreId($user);
-            $query->whereHas('asset', function ($aq) use ($user, $storeId) {
-                $aq->where(function ($q) use ($user, $storeId) {
-                    $q->where('created_by_id', $user->id);
-                    if ($storeId !== null) {
-                        $q->orWhere('store_id', $storeId);
-                    }
-                });
-            });
+            $query->whereHas('asset', fn($q) => $q->where('store_id', $storeId ?? 0));
+        } elseif ($request->filled('store_id')) {
+            $query->whereHas('asset', fn($q) => $q->where('store_id', $request->store_id));
         }
 
         if ($request->filled('asset_id')) {
@@ -82,17 +78,15 @@ class AssetIssueController extends Controller
             ], 404);
         }
 
-        // Gate: admin / creator / storage-staff di store aset.
-        $storeId = $this->userTodayStoreId($user);
-        $allowed = $user->hasRole('admin')
-            || $issue->asset?->created_by_id === $user->id
-            || $storeId === $issue->asset?->store_id;
-
-        if (!$allowed) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda tidak berhak menutup issue ini.',
-            ], 403);
+        // Gate: admin bebas. Staff hanya bisa menutup issue di store presence.
+        if (!$user->hasRole('admin')) {
+            $storeId = $this->userTodayStoreId($user);
+            if ($storeId === null || (int) $issue->asset?->store_id !== (int) $storeId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda hanya bisa menutup issue di store tempat Anda presence hari ini.',
+                ], 403);
+            }
         }
 
         $validator = Validator::make($request->all(), [

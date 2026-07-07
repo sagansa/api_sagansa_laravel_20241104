@@ -26,7 +26,6 @@ class AssetCheckController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-
         $query = AssetCheck::with([
             'asset:id,name,code,store_id',
             'asset.category:id,name',
@@ -34,17 +33,13 @@ class AssetCheckController extends Controller
             'items',
         ]);
 
-        // Scope berbasis role+store via whereHas('asset').
+        // Admin bebas lihat semua riwayat check (bisa filter via ?store_id=).
+        // Staff hanya lihat riwayat check di store tempat dia presence hari ini.
         if (!$user->hasRole('admin')) {
             $storeId = $this->userTodayStoreId($user);
-            $query->whereHas('asset', function ($aq) use ($user, $storeId) {
-                $aq->where(function ($q) use ($user, $storeId) {
-                    $q->where('created_by_id', $user->id);
-                    if ($storeId !== null) {
-                        $q->orWhere('store_id', $storeId);
-                    }
-                });
-            });
+            $query->whereHas('asset', fn($q) => $q->where('store_id', $storeId ?? 0));
+        } elseif ($request->filled('store_id')) {
+            $query->whereHas('asset', fn($q) => $q->where('store_id', $request->store_id));
         }
 
         if ($request->filled('asset_id')) {
@@ -55,9 +50,6 @@ class AssetCheckController extends Controller
         }
         if ($request->filled('to')) {
             $query->where('check_date', '<=', $request->to);
-        }
-        if ($request->filled('store_id')) {
-            $query->whereHas('asset', fn($q) => $q->where('store_id', $request->store_id));
         }
         if ($request->filled('severity')) {
             $query->where('severity', $request->severity);
@@ -130,18 +122,23 @@ class AssetCheckController extends Controller
 
         $asset = Asset::with('category')->findOrFail($request->asset_id);
 
-        // Gate: admin / creator / storage-staff di store aset.
+        // Gate: staff HANYA boleh check aset di store tempat dia presence
+        // hari ini. Admin bebas check aset manapun tanpa presence.
         $user = $request->user();
-        $storeId = $this->userTodayStoreId($user);
-        $canCheck = $user->hasRole('admin')
-            || $asset->created_by_id === $user->id
-            || $storeId === $asset->store_id;
-
-        if (!$canCheck) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda tidak berhak memeriksa aset ini.',
-            ], 403);
+        if (!$user->hasRole('admin')) {
+            $storeId = $this->userTodayStoreId($user);
+            if ($storeId === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda belum check-in (presence) hari ini. Lakukan presence di store terlebih dahulu sebelum memeriksa aset.',
+                ], 403);
+            }
+            if ((int) $asset->store_id !== (int) $storeId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Aset ini berada di store lain. Anda hanya bisa memeriksa aset di store tempat Anda presence hari ini.',
+                ], 403);
+            }
         }
 
         // Cegah double-submit di hari yang sama untuk aset yang sama.
