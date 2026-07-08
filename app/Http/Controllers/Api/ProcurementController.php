@@ -264,6 +264,70 @@ class ProcurementController extends Controller
     }
 
     /**
+     * Get list of invoice purchases.
+     */
+    public function invoices(Request $request)
+    {
+        $query = InvoicePurchase::with([
+            'store', 'supplier', 'detailInvoices', 'createdBy'
+        ]);
+
+        if (!$request->user()->hasRole('admin')) {
+            $query->where('created_by_id', $request->user()->id);
+        }
+
+        if ($request->has('order_status')) {
+            $query->where('order_status', $request->order_status);
+        }
+
+        if ($request->has('payment_status')) {
+            $query->where('payment_status', $request->payment_status);
+        }
+
+        if ($request->has('store_id')) {
+            $query->where('store_id', $request->store_id);
+        }
+
+        $invoices = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $invoices
+        ]);
+    }
+
+    /**
+     * Get detail of a specific invoice purchase.
+     */
+    public function showInvoice($id, Request $request)
+    {
+        $invoice = InvoicePurchase::with([
+            'store', 'supplier', 'createdBy',
+            'detailInvoices.detailRequest.product.unit',
+            'detailInvoices.detailRequest.paymentType',
+        ])->find($id);
+
+        if (!$invoice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice tidak ditemukan.'
+            ], 404);
+        }
+
+        if (!$request->user()->hasRole('admin') && $invoice->created_by_id !== $request->user()->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses ke data ini.'
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $invoice
+        ]);
+    }
+
+    /**
      * Auto-create Invoice from approved items.
      */
     public function createInvoice($id, Request $request)

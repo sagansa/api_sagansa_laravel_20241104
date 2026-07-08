@@ -44,4 +44,9 @@ class InvoicePurchase extends Model
     {
         return $this->belongsTo(User::class, 'created_by_id');
     }
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
+    }
 }

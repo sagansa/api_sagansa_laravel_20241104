@@ -105,6 +105,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/requests/items/{id}/reject', [\App\Http\Controllers\Api\ProcurementController::class, 'rejectItem']);
         Route::post('/requests/items/{id}/cancel', [\App\Http\Controllers\Api\ProcurementController::class, 'cancelItem']);
         Route::post('/requests/{id}/create-invoice', [\App\Http\Controllers\Api\ProcurementController::class, 'createInvoice']);
+        Route::get('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'invoices']);
+        Route::get('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showInvoice']);
     });
 
     Route::prefix('storage-stocks')->group(function () {
