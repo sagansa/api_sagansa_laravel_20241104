@@ -37,20 +37,6 @@ class StorageStockController extends Controller
     {
         $query = StorageStock::with(['store', 'createdBy', 'productStorageStocks.product.unit']);
 
-        // Staff see requests for the stores they belong to (determined by active check-in today)
-        if ($request->user()->hasRole('storage-staff')) {
-            $today = Carbon::now()->toDateString();
-            $presence = \App\Models\Presence::where('created_by_id', $request->user()->id)
-                ->whereDate('check_in', $today)
-                ->first();
-
-            if ($presence) {
-                $query->where('store_id', $presence->store_id);
-            } else {
-                $query->where('created_by_id', $request->user()->id);
-            }
-        }
-
         $requests = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
 
         return response()->json([
@@ -150,28 +136,34 @@ class StorageStockController extends Controller
     }
 
     /**
-     * Check if current user has reported today
+     * Check how many stores have reported today and if current user's store has reported.
      */
     public function todayStatus(Request $request)
     {
         $today = Carbon::now()->toDateString();
-        $query = StorageStock::where('date', $today);
         
+        $totalStores = \App\Models\Store::where('status', '<>', '8')->count();
+        $reportedStores = StorageStock::where('date', $today)
+            ->distinct('store_id')
+            ->count('store_id');
+        
+        $userStoreReported = false;
         if ($request->user()->hasRole('storage-staff')) {
             $presence = \App\Models\Presence::where('created_by_id', $request->user()->id)
                 ->whereDate('check_in', $today)
                 ->first();
-
             if ($presence) {
-                $query->where('store_id', $presence->store_id);
-            } else {
-                $query->where('created_by_id', $request->user()->id);
+                $userStoreReported = StorageStock::where('date', $today)
+                    ->where('store_id', $presence->store_id)
+                    ->exists();
             }
         }
         
         return response()->json([
             'success' => true,
-            'has_reported' => $query->exists()
+            'total_stores' => $totalStores,
+            'reported_stores' => $reportedStores,
+            'user_store_reported' => $userStoreReported,
         ]);
     }
 }

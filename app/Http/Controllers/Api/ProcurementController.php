@@ -331,7 +331,11 @@ class ProcurementController extends Controller
     public function createInvoice($id, Request $request)
     {
         $request->validate([
-            'supplier_id' => 'nullable|exists:suppliers,id',
+            'supplier_id' => 'required|exists:suppliers,id',
+            'items' => 'required|array|min:1',
+            'items.*.detail_request_id' => 'required|exists:detail_requests,id',
+            'items.*.price' => 'required|numeric|min:0',
+            'items.*.quantity' => 'required|numeric|min:1',
         ]);
 
         $requestPurchase = RequestPurchase::find($id);
@@ -343,29 +347,39 @@ class ProcurementController extends Controller
             ], 404);
         }
 
-        $approvedItems = $requestPurchase->detailRequests()->where('status', '4')->get();
+        $detailRequestIds = collect($request->items)->pluck('detail_request_id');
 
-        if ($approvedItems->isEmpty()) {
+        // Verify all items belong to this request and are approved
+        $validItems = DetailRequest::whereIn('id', $detailRequestIds)
+            ->where('request_purchase_id', $id)
+            ->where('status', '4')
+            ->get();
+
+        if ($validItems->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Tidak ada item disetujui (Approved) untuk dibuatkan invoice.'
+                'message' => 'Item yang dipilih tidak valid atau belum disetujui.'
             ], 400);
         }
 
-        // BUSINESS RULE: Check for empty invoice created by this user
-        $hasEmptyInvoice = InvoicePurchase::where('created_by_id', $request->user()->id)
-            ->whereDoesntHave('detailInvoices')
-            ->exists();
+        // Check for duplicate items from different requests (already scoped by request id)
 
-        if ($hasEmptyInvoice) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda masih memiliki invoice kosong (tanpa detail item). Silakan lengkapi atau hapus invoice kosong tersebut terlebih dahulu.'
-            ], 422);
-        }
+        return DB::transaction(function () use ($requestPurchase, $validItems, $request) {
+            $totalPrice = 0;
+            $itemData = [];
+            foreach ($request->items as $item) {
+                $detailRequest = $validItems->firstWhere('id', $item['detail_request_id']);
+                if (!$detailRequest) continue;
 
-        return DB::transaction(function () use ($requestPurchase, $approvedItems, $request) {
-            $firstItem = $approvedItems->first();
+                $subtotal = (int) $item['price'] * (int) $item['quantity'];
+                $totalPrice += $subtotal;
+                $itemData[] = [
+                    'detail_request' => $detailRequest,
+                    'price' => (int) $item['price'],
+                    'quantity' => (int) $item['quantity'],
+                    'subtotal' => $subtotal,
+                ];
+            }
 
             $invoice = InvoicePurchase::create([
                 'store_id' => $requestPurchase->store_id,
@@ -373,31 +387,30 @@ class ProcurementController extends Controller
                 'payment_status' => '1',
                 'order_status' => '1',
                 'created_by_id' => $request->user()->id,
-                'payment_type_id' => $firstItem->payment_type_id ?? 2,
-                'total_price' => 0,
-                'supplier_id' => $request->input('supplier_id'),
+                'payment_type_id' => 2,
+                'total_price' => $totalPrice,
+                'supplier_id' => $request->supplier_id,
                 'taxes' => 0,
                 'discounts' => 0,
             ]);
 
-            // Counter untuk lapor balik jumlah aset yang dibuat (info UI).
             $assetsCreated = 0;
 
-            foreach ($approvedItems as $item) {
+            foreach ($itemData as $data) {
+                $detailRequest = $data['detail_request'];
+
                 $detailInvoice = DetailInvoice::create([
                     'invoice_purchase_id' => $invoice->id,
-                    'detail_request_id' => $item->id,
-                    'quantity_product' => $item->quantity_plan,
-                    'subtotal_invoice' => 0,
+                    'detail_request_id' => $detailRequest->id,
+                    'quantity_product' => $data['quantity'],
+                    'subtotal_invoice' => $data['subtotal'],
                     'status' => '3',
                 ]);
 
-                // AUTO-LINK ASSET: bila produk ini ber-flag is_asset, buat satu
-                // instance Asset per unit qty. Aset akan langsung terjadwalkan
-                // next_check_at berdasarkan frekuensi kategori produk tsb.
-                $product = Product::with('assetCategory')->find($item->product_id);
+                // Auto-create assets if product is flagged as asset
+                $product = Product::with('assetCategory')->find($detailRequest->product_id);
                 if ($product && $product->is_asset && $product->asset_category_id) {
-                    $qty = max(1, (int) $item->quantity_plan);
+                    $qty = max(1, $data['quantity']);
                     for ($i = 0; $i < $qty; $i++) {
                         Asset::create([
                             'code' => Asset::generateCode(),
@@ -421,7 +434,7 @@ class ProcurementController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Invoice berhasil dibuat secara otomatis.'
+                'message' => 'Invoice berhasil dibuat.'
                     . ($assetsCreated > 0 ? " {$assetsCreated} aset baru otomatis tercatat." : ''),
                 'invoice_id' => $invoice->id,
                 'assets_created' => $assetsCreated,
