@@ -63,14 +63,6 @@ class StorageStockController extends Controller
             ], 404);
         }
 
-        // Staff checking guard
-        if ($request->user()->hasRole('storage-staff') && $storageStock->created_by_id !== $request->user()->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda tidak memiliki akses ke data ini.'
-            ], 403);
-        }
-
         return response()->json([
             'success' => true,
             'data' => $storageStock
