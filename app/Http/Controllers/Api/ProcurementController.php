@@ -289,11 +289,18 @@ class ProcurementController extends Controller
             $query->where('store_id', $request->store_id);
         }
 
-        $invoices = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
+        $perPage = $request->query('per_page', 10);
+        $invoices = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $invoices
+            'data' => $invoices->items(),
+            'meta' => [
+                'current_page' => $invoices->currentPage(),
+                'last_page' => $invoices->lastPage(),
+                'per_page' => $invoices->perPage(),
+                'total' => $invoices->total(),
+            ],
         ]);
     }
 
@@ -442,11 +449,18 @@ class ProcurementController extends Controller
             $query->whereHas('invoicePurchases', fn ($q) => $q->where('invoice_purchase_id', $request->invoice_id));
         }
 
-        $receipts = $query->orderBy('created_at', 'desc')->get();
+        $perPage = $request->query('per_page', 10);
+        $receipts = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $receipts
+            'data' => $receipts->items(),
+            'meta' => [
+                'current_page' => $receipts->currentPage(),
+                'last_page' => $receipts->lastPage(),
+                'per_page' => $receipts->perPage(),
+                'total' => $receipts->total(),
+            ],
         ]);
     }
 
