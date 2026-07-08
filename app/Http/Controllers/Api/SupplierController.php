@@ -10,6 +10,7 @@ use App\Models\District;
 use App\Models\Subdistrict;
 use App\Models\PostalCode;
 use App\Models\Bank;
+use App\Services\QrisService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -89,6 +90,7 @@ class SupplierController extends Controller
             'bank_account_name' => 'nullable|string|max:255',
             'bank_account_no' => 'nullable|string|max:50',
             'image' => 'nullable|image|max:2048',
+            'qris' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -148,6 +150,7 @@ class SupplierController extends Controller
             'bank_account_no' => 'nullable|string|max:50',
             'image' => 'nullable|image|max:2048',
             'status' => 'nullable|integer|in:1,2,3',
+            'qris' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -267,6 +270,54 @@ class SupplierController extends Controller
         return response()->json([
             'success' => true,
             'data' => Bank::orderBy('name')->get(['id', 'name'])
+        ]);
+    }
+
+    /**
+     * Validate and parse a QRIS payload.
+     */
+    public function validateQris(Request $request, $id)
+    {
+        $supplier = Supplier::find($id);
+
+        if (!$supplier) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Supplier tidak ditemukan.'
+            ], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'qris' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $qrisService = app(QrisService::class);
+        $parsed = $qrisService->parsePayload($request->qris);
+
+        if (!$parsed['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'QRIS payload tidak valid.',
+            ], 400);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'merchant_name' => $parsed['merchant_name'],
+                'merchant_city' => $parsed['merchant_city'],
+                'merchant_nmid' => $qrisService->getMerchantNmid($parsed),
+                'point_of_initiation_label' => $parsed['point_of_initiation_label'],
+                'currency' => $parsed['currency'],
+            ],
         ]);
     }
 }

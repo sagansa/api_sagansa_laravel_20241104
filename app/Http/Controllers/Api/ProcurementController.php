@@ -10,6 +10,7 @@ use App\Models\DetailInvoice;
 use App\Models\Product;
 use App\Models\Asset;
 use App\Models\PaymentReceipt;
+use App\Services\QrisService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -493,6 +494,54 @@ class ProcurementController extends Controller
             'success' => true,
             'data' => $receipt
         ]);
+    }
+
+    /**
+     * Get QRIS payload for a payment receipt.
+     */
+    public function paymentReceiptQris($id, Request $request)
+    {
+        $receipt = PaymentReceipt::with('supplier')->find($id);
+
+        if (!$receipt) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment receipt tidak ditemukan.'
+            ], 404);
+        }
+
+        if (!$receipt->supplier || !$receipt->supplier->qris) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Supplier tidak memiliki data QRIS.'
+            ], 400);
+        }
+
+        try {
+            $qrisService = app(QrisService::class);
+            $dynamicPayload = $qrisService->generateDynamicPayload(
+                $receipt->supplier->qris,
+                $receipt->transfer_amount ?? $receipt->total_amount ?? 0
+            );
+
+            $parsed = $qrisService->parsePayload($receipt->supplier->qris);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'payload' => $dynamicPayload,
+                    'merchant_name' => $parsed['merchant_name'] ?? null,
+                    'merchant_nmid' => $qrisService->getMerchantNmid($parsed),
+                    'amount' => $receipt->transfer_amount ?? $receipt->total_amount,
+                    'raw_supplier_qris' => $receipt->supplier->qris,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal generate QRIS: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**

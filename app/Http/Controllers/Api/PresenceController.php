@@ -239,18 +239,18 @@ class PresenceController extends Controller
                 }
             }
 
-            // Validasi Kebersihan Toko - setiap hari
-            $hasHygiene = \App\Models\Hygiene::where('created_by_id', $presenceUserId)
-                ->whereDate('created_at', $now->toDateString())
-                ->exists();
-
-            if (!$hasHygiene) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Anda wajib mengisi form Kebersihan Toko sebelum Check-in.',
-                    'error_code' => 'HYGIENE_REQUIRED'
-                ], 400);
-            }
+            // Validasi Kebersihan Toko - tidak wajib (opsional)
+            // $hasHygiene = \App\Models\Hygiene::where('created_by_id', $presenceUserId)
+            //     ->whereDate('created_at', $now->toDateString())
+            //     ->exists();
+            //
+            // if (!$hasHygiene) {
+            //     return response()->json([
+            //         'status' => 'error',
+            //         'message' => 'Anda wajib mengisi form Kebersihan Toko sebelum Check-in.',
+            //         'error_code' => 'HYGIENE_REQUIRED'
+            //     ], 400);
+            // }
 
             // Validasi input
             $validationRules = [

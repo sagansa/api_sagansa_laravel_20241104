@@ -109,6 +109,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showInvoice']);
         Route::get('/payment-receipts', [\App\Http\Controllers\Api\ProcurementController::class, 'paymentReceipts']);
         Route::get('/payment-receipts/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showPaymentReceipt']);
+        Route::get('/payment-receipts/{id}/qris', [\App\Http\Controllers\Api\ProcurementController::class, 'paymentReceiptQris']);
         Route::post('/payment-receipts', [\App\Http\Controllers\Api\ProcurementController::class, 'storePaymentReceipt']);
     });
 
@@ -148,6 +149,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [\App\Http\Controllers\Api\SupplierController::class, 'store']);
         Route::get('/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'show']);
         Route::post('/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'update']);
+        Route::post('/{id}/validate-qris', [\App\Http\Controllers\Api\SupplierController::class, 'validateQris']);
         Route::delete('/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'destroy']);
     });
 
