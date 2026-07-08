@@ -49,4 +49,10 @@ class InvoicePurchase extends Model
     {
         return $this->belongsTo(Supplier::class);
     }
+
+    public function paymentReceipts()
+    {
+        return $this->belongsToMany(PaymentReceipt::class)
+            ->distinct();
+    }
 }

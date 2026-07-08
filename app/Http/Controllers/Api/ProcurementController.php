@@ -9,6 +9,7 @@ use App\Models\InvoicePurchase;
 use App\Models\DetailInvoice;
 use App\Models\Product;
 use App\Models\Asset;
+use App\Models\PaymentReceipt;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -421,6 +422,146 @@ class ProcurementController extends Controller
                 'invoice_id' => $invoice->id,
                 'assets_created' => $assetsCreated,
             ]);
+        });
+    }
+
+    /**
+     * Get list of payment receipts (for invoice purchases).
+     */
+    public function paymentReceipts(Request $request)
+    {
+        $query = PaymentReceipt::with([
+            'invoicePurchases.store', 'invoicePurchases.supplier', 'supplier'
+        ])->where('payment_for', '3'); // Only Invoice Purchase receipts
+
+        if (!$request->user()->hasRole('admin')) {
+            $query->where('user_id', $request->user()->id);
+        }
+
+        if ($request->has('invoice_id')) {
+            $query->whereHas('invoicePurchases', fn ($q) => $q->where('invoice_purchase_id', $request->invoice_id));
+        }
+
+        $receipts = $query->orderBy('created_at', 'desc')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $receipts
+        ]);
+    }
+
+    /**
+     * Get detail of a specific payment receipt.
+     */
+    public function showPaymentReceipt($id, Request $request)
+    {
+        $receipt = PaymentReceipt::with([
+            'invoicePurchases.store',
+            'invoicePurchases.supplier',
+            'invoicePurchases.detailInvoices.detailRequest.product.unit',
+            'supplier',
+        ])->find($id);
+
+        if (!$receipt) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment receipt tidak ditemukan.'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $receipt
+        ]);
+    }
+
+    /**
+     * Create a new payment receipt for invoice purchases.
+     */
+    public function storePaymentReceipt(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'invoice_ids' => 'required|array|min:1',
+            'invoice_ids.*' => 'exists:invoice_purchases,id',
+            'transfer_amount' => 'required|numeric|min:1',
+            'total_amount' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string|max:500',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $invoiceIds = $request->invoice_ids;
+
+        // Verify all invoices belong to this user (for non-admin)
+        if (!$request->user()->hasRole('admin')) {
+            $myInvoices = InvoicePurchase::whereIn('id', $invoiceIds)
+                ->where('created_by_id', $request->user()->id)
+                ->count();
+
+            if ($myInvoices !== count($invoiceIds)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Beberapa invoice tidak ditemukan atau bukan milik Anda.'
+                ], 403);
+            }
+        }
+
+        // Verify all invoices are unpaid and Transfer payment type
+        $invoices = InvoicePurchase::whereIn('id', $invoiceIds)->get();
+        foreach ($invoices as $inv) {
+            if ($inv->payment_status !== '1') {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Invoice #{$inv->id} sudah dibayar atau tidak valid."
+                ], 400);
+            }
+            if ($inv->payment_type_id != 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Invoice #{$inv->id} bukan metode Transfer."
+                ], 400);
+            }
+        }
+
+        return DB::transaction(function () use ($request, $invoiceIds, $invoices) {
+            $totalAmount = $request->total_amount ?? $invoices->sum('total_price');
+            $firstInvoice = $invoices->first();
+
+            $imagePath = null;
+            if ($request->hasFile('image')) {
+                $imagePath = $request->file('image')->store('images/PaymentReceipt', 'public');
+            }
+
+            $receipt = PaymentReceipt::create([
+                'payment_for' => '3',
+                'total_amount' => (int) $totalAmount,
+                'transfer_amount' => (int) $request->transfer_amount,
+                'supplier_id' => $firstInvoice->supplier_id,
+                'user_id' => $request->user()->id,
+                'notes' => $request->notes,
+                'image' => $imagePath,
+            ]);
+
+            // Attach invoices to receipt
+            $receipt->invoicePurchases()->attach($invoiceIds);
+
+            // Update invoice payment status to paid
+            foreach ($invoices as $inv) {
+                $inv->update(['payment_status' => '2']);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment receipt berhasil dibuat.',
+                'data' => $receipt->load('invoicePurchases')
+            ], 201);
         });
     }
 }
