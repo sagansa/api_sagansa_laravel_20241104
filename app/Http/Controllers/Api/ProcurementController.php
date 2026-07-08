@@ -126,6 +126,7 @@ class ProcurementController extends Controller
                 'store_id' => $request->store_id,
                 'date' => now()->toDateString(),
                 'user_id' => $request->user()->id,
+                'status' => 1, // Process
             ]);
 
             foreach ($request->items as $item) {
@@ -273,10 +274,6 @@ class ProcurementController extends Controller
             'store', 'supplier', 'detailInvoices', 'createdBy'
         ]);
 
-        if (!$request->user()->hasRole('admin')) {
-            $query->where('created_by_id', $request->user()->id);
-        }
-
         if ($request->has('order_status')) {
             $query->where('order_status', $request->order_status);
         }
@@ -307,7 +304,7 @@ class ProcurementController extends Controller
     /**
      * Get detail of a specific invoice purchase.
      */
-    public function showInvoice($id, Request $request)
+    public function showInvoice($id)
     {
         $invoice = InvoicePurchase::with([
             'store', 'supplier', 'createdBy',
@@ -322,13 +319,6 @@ class ProcurementController extends Controller
             ], 404);
         }
 
-        if (!$request->user()->hasRole('admin') && $invoice->created_by_id !== $request->user()->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda tidak memiliki akses ke data ini.'
-            ], 403);
-        }
-
         return response()->json([
             'success' => true,
             'data' => $invoice
@@ -340,6 +330,10 @@ class ProcurementController extends Controller
      */
     public function createInvoice($id, Request $request)
     {
+        $request->validate([
+            'supplier_id' => 'nullable|exists:suppliers,id',
+        ]);
+
         $requestPurchase = RequestPurchase::find($id);
 
         if (!$requestPurchase) {
@@ -381,6 +375,9 @@ class ProcurementController extends Controller
                 'created_by_id' => $request->user()->id,
                 'payment_type_id' => $firstItem->payment_type_id ?? 2,
                 'total_price' => 0,
+                'supplier_id' => $request->input('supplier_id'),
+                'taxes' => 0,
+                'discounts' => 0,
             ]);
 
             // Counter untuk lapor balik jumlah aset yang dibuat (info UI).
@@ -440,10 +437,6 @@ class ProcurementController extends Controller
         $query = PaymentReceipt::with([
             'invoicePurchases.store', 'invoicePurchases.supplier', 'supplier'
         ])->where('payment_for', '3'); // Only Invoice Purchase receipts
-
-        if (!$request->user()->hasRole('admin')) {
-            $query->where('user_id', $request->user()->id);
-        }
 
         if ($request->has('invoice_id')) {
             $query->whereHas('invoicePurchases', fn ($q) => $q->where('invoice_purchase_id', $request->invoice_id));
@@ -512,20 +505,6 @@ class ProcurementController extends Controller
         }
 
         $invoiceIds = $request->invoice_ids;
-
-        // Verify all invoices belong to this user (for non-admin)
-        if (!$request->user()->hasRole('admin')) {
-            $myInvoices = InvoicePurchase::whereIn('id', $invoiceIds)
-                ->where('created_by_id', $request->user()->id)
-                ->count();
-
-            if ($myInvoices !== count($invoiceIds)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Beberapa invoice tidak ditemukan atau bukan milik Anda.'
-                ], 403);
-            }
-        }
 
         // Verify all invoices are unpaid and Transfer payment type
         $invoices = InvoicePurchase::whereIn('id', $invoiceIds)->get();

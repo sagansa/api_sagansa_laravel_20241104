@@ -132,7 +132,7 @@ class ClosingStoreController extends Controller
             
         // Unpaid invoice purchases for this store
         $invoicePurchasesQuery = InvoicePurchase::where('payment_type_id', 2) // Cash
-            ->where('status', 1) // Unpaid
+            ->where('payment_status', '1') // Unpaid
             ->where('store_id', $storeId)
             ->whereDate('date', '>=', Carbon::now()->subDays(15)->toDateString());
             
@@ -242,6 +242,7 @@ class ClosingStoreController extends Controller
             'fuel_service' => 'required|in:1,2',
             'vehicle_id' => 'required|exists:vehicles,id',
             'supplier_id' => 'nullable|exists:suppliers,id',
+            'payment_type_id' => 'nullable|exists:payment_types,id',
             'km' => 'nullable|numeric',
             'liter' => 'nullable|numeric',
             'amount' => 'required|numeric',
@@ -276,7 +277,7 @@ class ClosingStoreController extends Controller
             'fuel_service' => $request->input('fuel_service'),
             'vehicle_id' => $request->input('vehicle_id'),
             'supplier_id' => $request->input('supplier_id'),
-            'payment_type_id' => 2, // Cash/Tunai
+            'payment_type_id' => $request->input('payment_type_id', 2), // Cash/Tunai
             'km' => $request->input('km') ?? 0,
             'liter' => $request->input('liter') ?? 0,
             'amount' => $request->input('amount'),
