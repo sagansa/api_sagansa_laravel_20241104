@@ -42,12 +42,8 @@ Route::get('/app-version', function (\Illuminate\Http\Request $request) {
         ]);
     }
     
-    // Construct the download URL via /media/{path} (MediaController) agar response
-    // selalu membawa header CORS. Hindari url('storage/...') yang diserve langsung
-    // oleh web server tanpa header CORS.
-    $downloadUrl = $latestVersion->apk_file
-        ? route('media.show', ['path' => $latestVersion->apk_file])
-        : '';
+    // APK disajikan dari image service (img.sagansa.id/storage/...).
+    $downloadUrl = \App\Support\ImageUrlResolver::resolve($latestVersion->apk_file) ?? '';
         
     return response()->json([
         'latest_version' => $latestVersion->version_code,
@@ -114,6 +110,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('storage-stocks')->group(function () {
+        Route::get('/monitoring', [\App\Http\Controllers\Api\StorageStockController::class, 'stockMonitoring']);
         Route::get('/products', [\App\Http\Controllers\Api\StorageStockController::class, 'products']);
         Route::get('/today-status', [\App\Http\Controllers\Api\StorageStockController::class, 'todayStatus']);
         Route::get('/', [\App\Http\Controllers\Api\StorageStockController::class, 'index']);

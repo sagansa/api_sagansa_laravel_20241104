@@ -158,4 +158,74 @@ class StorageStockController extends Controller
             'user_store_reported' => $userStoreReported,
         ]);
     }
+
+    /**
+     * Get stock monitoring aggregated from latest storage stocks of all stores.
+     */
+    public function stockMonitoring(Request $request)
+    {
+        $now = Carbon::now('Asia/Jakarta');
+        $today = $now->toDateString();
+        $hour = $now->hour;
+
+        // Before 22:00 today, only show reports up to yesterday.
+        // From 22:00 today onwards, show reports up to today.
+        $maxAllowedDate = $today;
+        if ($hour < 22) {
+            $maxAllowedDate = $now->copy()->subDay()->toDateString();
+        }
+
+        // 1. Optimized subquery for latest remaining storage stock per product up to $maxAllowedDate
+        $latestStockSubquery = DB::table('detail_stock_cards as dsc')
+            ->join('stock_cards as sc', 'dsc.stock_card_id', '=', 'sc.id')
+            ->join(DB::raw('(
+                SELECT dsc2.product_id, MAX(sc2.date) as max_date 
+                FROM detail_stock_cards dsc2 
+                JOIN stock_cards sc2 ON dsc2.stock_card_id = sc2.id 
+                WHERE sc2.for = \'remaining_storage\' 
+                  AND sc2.date <= \'' . $maxAllowedDate . '\' 
+                GROUP BY dsc2.product_id
+            ) as latest'), function($join) {
+                $join->on('dsc.product_id', '=', 'latest.product_id')
+                     ->on('sc.date', '=', 'latest.max_date');
+            })
+            ->where('sc.for', 'remaining_storage')
+            ->where('sc.date', '<=', $maxAllowedDate)
+            ->select('dsc.product_id', DB::raw('SUM(dsc.quantity) as current_quantity'), DB::raw('MAX(sc.date) as latest_date'))
+            ->groupBy('dsc.product_id');
+
+        $latestReports = $latestStockSubquery->get();
+        $productQuantities = $latestReports->pluck('current_quantity', 'product_id');
+        $lastStockDate = $latestReports->max('latest_date');
+
+        // 3. Load stock monitorings
+        $stockMonitorings = DB::table('stock_monitorings')
+            ->leftJoin('units', 'stock_monitorings.unit_id', '=', 'units.id')
+            ->select('stock_monitorings.*', 'units.unit as unit_nickname')
+            ->get();
+
+        // 4. Calculate total stock per monitoring group
+        foreach ($stockMonitorings as $sm) {
+            $details = DB::table('stock_monitoring_details')
+                ->join('products', 'stock_monitoring_details.product_id', '=', 'products.id')
+                ->where('stock_monitoring_details.stock_monitoring_id', $sm->id)
+                ->select('stock_monitoring_details.*', 'products.name as product_name')
+                ->get();
+
+            $calculatedTotal = 0;
+            foreach ($details as $detail) {
+                $qty = isset($productQuantities[$detail->product_id]) ? $productQuantities[$detail->product_id] : 0;
+                $calculatedTotal += $qty * $detail->coefficient;
+            }
+
+            $sm->calculated_total_stock = $calculatedTotal;
+            $sm->details = $details;
+            $sm->last_stock_date = $lastStockDate;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $stockMonitorings
+        ]);
+    }
 }

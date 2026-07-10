@@ -367,14 +367,7 @@ class SalesOrderController extends Controller
 
     private function getStorageUrl($path)
     {
-        if (!$path) {
-            return null;
-        }
-
-        // Route melalui /media/{path} (MediaController) agar response selalu
-        // membawa header CORS. Hal ini menghindari masalah CORS saat file
-        // diakses cross-origin (mis. Flutter web @ localhost ke api.sagansa.id).
-        return route('media.show', ['path' => ltrim($path, '/')]);
+        return \App\Support\ImageUrlResolver::resolve($path);
     }
 
     private function paymentProofPrintColumns(): array
