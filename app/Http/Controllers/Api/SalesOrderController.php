@@ -248,6 +248,8 @@ class SalesOrderController extends Controller
             'receipt_no' => 'required|string',
             'image_delivery' => 'required|image|max:5120', // max 5MB
             'received_by' => 'nullable|string|max:255',
+            'delivery_status' => 'nullable|in:3,6',
+            'notes' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -273,10 +275,11 @@ class SalesOrderController extends Controller
             ], 404);
         }
 
-        if ($order->delivery_status == 2) {
+        if (in_array((int)$order->delivery_status, [2, 6])) {
+            $statusName = $order->delivery_status == 2 ? 'valid' : 'dikembalikan';
             return response()->json([
                 'success' => false,
-                'message' => 'Order sudah berstatus valid dan tidak dapat diubah.'
+                'message' => "Order sudah berstatus {$statusName} dan tidak dapat diubah."
             ], 400);
         }
 
@@ -288,22 +291,35 @@ class SalesOrderController extends Controller
             $imagePath = $file->store('images/Online/Delivery', 'public');
         }
 
+        $deliveryStatus = (int) $request->input('delivery_status', 3);
+        $notes = $request->input('notes');
+
+        $updateData = [
+            'delivery_status' => $deliveryStatus,
+            'image_delivery' => $imagePath,
+            'updated_at' => now(),
+        ];
+
+        if ($deliveryStatus === 6) {
+            $updateData['notes'] = $notes;
+            $updateData['received_by'] = null;
+        } else {
+            $updateData['received_by'] = $request->input('received_by');
+        }
+
         // Update database
         DB::table('sales_orders')
             ->where('id', $order->id)
-            ->update([
-                'delivery_status' => 3, // Sudah dikirim
-                'image_delivery' => $imagePath,
-                'received_by' => $request->input('received_by'),
-                'updated_at' => now(),
-            ]);
+            ->update($updateData);
+
+        $statusMsg = $deliveryStatus === 6 ? 'dikembalikan' : 'sudah dikirim';
 
         return response()->json([
             'success' => true,
-            'message' => 'Status pengiriman berhasil diperbarui.',
+            'message' => "Status pengiriman berhasil diperbarui menjadi {$statusMsg}.",
             'data' => [
                 'receipt_no' => $receiptNo,
-                'delivery_status' => 3,
+                'delivery_status' => $deliveryStatus,
                 'image_delivery_url' => $this->getStorageUrl($imagePath)
             ]
         ]);
