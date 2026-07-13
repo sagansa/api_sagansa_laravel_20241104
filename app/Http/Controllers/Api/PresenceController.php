@@ -314,7 +314,7 @@ class PresenceController extends Controller
             // Upload dan simpan image
             $imagePath = null;
             if ($request->hasFile('image_in')) {
-                $imagePath = $request->file('image_in')->store('presences/check-in', 'public');
+                $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image_in'), 'presences/check-in');
             }
 
             // Buat presensi baru
@@ -342,7 +342,7 @@ class PresenceController extends Controller
         } catch (\Exception $e) {
             // Hapus file jika upload gagal
             if (isset($imagePath)) {
-                Storage::disk('public')->delete($imagePath);
+                app(\App\Contracts\ImageStorageContract::class)->delete($imagePath);
             }
 
             return response()->json([
@@ -433,7 +433,7 @@ class PresenceController extends Controller
                 // Upload dan simpan image
                 $imagePath = null;
                 if ($request->hasFile('image_out')) {
-                    $imagePath = $request->file('image_out')->store('presences/check-out', 'public');
+                    $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image_out'), 'presences/check-out');
                 }
 
                 // Update presensi
@@ -463,7 +463,7 @@ class PresenceController extends Controller
             } catch (\Exception $e) {
                 // Hapus file jika upload gagal
                 if (isset($imagePath)) {
-                    Storage::disk('public')->delete($imagePath);
+                    app(\App\Contracts\ImageStorageContract::class)->delete($imagePath);
                 }
 
                 throw $e;

@@ -286,9 +286,10 @@ class SalesOrderController extends Controller
         // Handle image upload
         $imagePath = null;
         if ($request->hasFile('image_delivery')) {
-            $file = $request->file('image_delivery');
-            // Store in images/Online/Delivery
-            $imagePath = $file->store('images/Online/Delivery', 'public');
+            if ($order->image_delivery) {
+                app(\App\Contracts\ImageStorageContract::class)->delete($order->image_delivery);
+            }
+            $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image_delivery'), 'images/Online/Delivery');
         }
 
         $deliveryStatus = (int) $request->input('delivery_status', 3);

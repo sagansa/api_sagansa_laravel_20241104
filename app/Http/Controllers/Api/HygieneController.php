@@ -138,8 +138,10 @@ class HygieneController extends Controller
             $imagePath = null;
 
             if ($request->hasFile("rooms.$i.image")) {
-                $imagePath = $request->file("rooms.$i.image")
-                    ->store("images/Hygiene/{$hygiene->id}", 'public');
+                $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload(
+                    $request->file("rooms.$i.image"),
+                    "images/Hygiene/{$hygiene->id}"
+                );
             }
 
             $hygieneOfRoom = HygieneOfRoom::create([

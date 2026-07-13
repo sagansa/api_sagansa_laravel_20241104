@@ -110,7 +110,7 @@ class SupplierController extends Controller
 
         // Image upload handling
         if ($request->hasFile('image')) {
-            $data['image'] = $request->file('image')->store('images/Supplier', 'public');
+            $data['image'] = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image'), 'images/Supplier');
         }
 
         $supplier = Supplier::create($data);
@@ -137,20 +137,20 @@ class SupplierController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'no_telp' => 'nullable|string|max:20',
-            'address' => 'required|string',
-            'province_id' => 'required|exists:provinces,id',
-            'city_id' => 'required|exists:cities,id',
-            'district_id' => 'nullable|exists:districts,id',
-            'subdistrict_id' => 'nullable|exists:subdistricts,id',
-            'postal_code_id' => 'nullable|exists:postal_codes,id',
-            'bank_id' => 'nullable|exists:banks,id',
-            'bank_account_name' => 'nullable|string|max:255',
-            'bank_account_no' => 'nullable|string|max:50',
+            'name' => 'sometimes|required|string|max:255',
+            'email' => 'sometimes|required|email|max:255|unique:suppliers,email,' . $id,
+            'phone' => 'sometimes|required|string|max:20',
+            'bank_id' => 'sometimes|required|exists:banks,id',
+            'bank_account_no' => 'sometimes|required|string|max:50',
+            'bank_account_name' => 'sometimes|required|string|max:255',
+            'province_id' => 'sometimes|required',
+            'city_id' => 'sometimes|required',
+            'district_id' => 'sometimes|required',
+            'subdistrict_id' => 'sometimes|required',
+            'postal_code_id' => 'sometimes|required',
+            'address' => 'sometimes|required|string',
             'image' => 'nullable|image|max:2048',
-            'status' => 'nullable|integer|in:1,2,3',
-            'qris' => 'nullable|string',
+            'status' => 'sometimes|integer|in:1,2,3',
         ]);
 
         if ($validator->fails()) {
@@ -162,11 +162,13 @@ class SupplierController extends Controller
         }
 
         $data = $request->except(['image', 'user_id']);
-
+        
         // Capital case formatting for name
-        $data['name'] = ucwords(strtolower($request->name));
+        if ($request->has('name')) {
+            $data['name'] = ucwords(strtolower($request->name));
+        }
 
-        // Manage status updates: only allowed for admin
+        // Only Admin can update status
         if ($request->has('status')) {
             if (!$request->user()->hasRole('admin')) {
                 unset($data['status']); // Staff cannot change status
@@ -177,9 +179,9 @@ class SupplierController extends Controller
         if ($request->hasFile('image')) {
             // Delete old image if it exists
             if ($supplier->image) {
-                Storage::disk('public')->delete($supplier->image);
+                app(\App\Contracts\ImageStorageContract::class)->delete($supplier->image);
             }
-            $data['image'] = $request->file('image')->store('images/Supplier', 'public');
+            $data['image'] = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image'), 'images/Supplier');
         }
 
         $supplier->update($data);
@@ -207,7 +209,7 @@ class SupplierController extends Controller
 
         // Delete associated image
         if ($supplier->image) {
-            Storage::disk('public')->delete($supplier->image);
+            app(\App\Contracts\ImageStorageContract::class)->delete($supplier->image);
         }
 
         $supplier->delete();

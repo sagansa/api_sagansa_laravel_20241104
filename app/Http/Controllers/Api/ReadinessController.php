@@ -60,9 +60,9 @@ class ReadinessController extends Controller
         $rightHandPath = null;
 
         try {
-            $imageSelfiePath = $request->file('image_selfie')->store('images/Readiness', 'public');
-            $leftHandPath = $request->file('left_hand')->store('images/Readiness', 'public');
-            $rightHandPath = $request->file('right_hand')->store('images/Readiness', 'public');
+            $imageSelfiePath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image_selfie'), 'images/Readiness');
+            $leftHandPath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('left_hand'), 'images/Readiness');
+            $rightHandPath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('right_hand'), 'images/Readiness');
 
             $readiness = Readiness::create([
                 'created_by_id' => $userId,
@@ -78,9 +78,9 @@ class ReadinessController extends Controller
                 'data' => $readiness
             ], 201);
         } catch (\Exception $e) {
-            if ($imageSelfiePath) Storage::disk('public')->delete($imageSelfiePath);
-            if ($leftHandPath) Storage::disk('public')->delete($leftHandPath);
-            if ($rightHandPath) Storage::disk('public')->delete($rightHandPath);
+            if ($imageSelfiePath) app(\App\Contracts\ImageStorageContract::class)->delete($imageSelfiePath);
+            if ($leftHandPath) app(\App\Contracts\ImageStorageContract::class)->delete($leftHandPath);
+            if ($rightHandPath) app(\App\Contracts\ImageStorageContract::class)->delete($rightHandPath);
 
             return response()->json([
                 'status' => 'error',

@@ -156,7 +156,7 @@ class AssetCheckController extends Controller
         $photoPaths = [];
         if ($request->hasFile('photos')) {
             foreach ($request->file('photos') as $file) {
-                $photoPaths[] = $file->store('assets/checks', 'public');
+                $photoPaths[] = app(\App\Contracts\ImageStorageContract::class)->upload($file, 'assets/checks');
             }
         }
 

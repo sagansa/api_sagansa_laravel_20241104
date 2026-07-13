@@ -295,7 +295,7 @@ class AssetController extends Controller
         }
 
         if ($request->hasFile('photo')) {
-            $data['photo'] = $request->file('photo')->store('assets/photos', 'public');
+            $data['photo'] = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('photo'), 'assets/photos');
         }
 
         $asset = Asset::create($data);
@@ -345,9 +345,9 @@ class AssetController extends Controller
 
         if ($request->hasFile('photo')) {
             if ($asset->photo) {
-                Storage::disk('public')->delete($asset->photo);
+                app(\App\Contracts\ImageStorageContract::class)->delete($asset->photo);
             }
-            $data['photo'] = $request->file('photo')->store('assets/photos', 'public');
+            $data['photo'] = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('photo'), 'assets/photos');
         }
 
         $asset->update($data);
@@ -377,7 +377,7 @@ class AssetController extends Controller
         }
 
         if ($asset->photo) {
-            Storage::disk('public')->delete($asset->photo);
+            app(\App\Contracts\ImageStorageContract::class)->delete($asset->photo);
         }
 
         $asset->delete();

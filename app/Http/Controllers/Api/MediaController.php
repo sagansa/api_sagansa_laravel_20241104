@@ -62,6 +62,7 @@ class MediaController extends Controller
 
         if (!$disk->exists($path)) {
             $fallbackUrls = [
+                'https://img.sagansa.id/storage/' . $path,
                 'https://sagansa.id/storage/' . $path,
                 'https://www.sagansa.id/storage/' . $path,
                 'https://admin.sagansa.id/storage/' . $path,

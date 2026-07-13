@@ -591,7 +591,7 @@ class ProcurementController extends Controller
 
             $imagePath = null;
             if ($request->hasFile('image')) {
-                $imagePath = $request->file('image')->store('images/PaymentReceipt', 'public');
+                $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image'), 'images/PaymentReceipt');
             }
 
             $receipt = PaymentReceipt::create([

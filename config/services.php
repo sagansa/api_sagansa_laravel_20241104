@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'image' => [
+        'service_url' => env('IMG_SERVICE_URL', 'https://img.sagansa.id'),
+        'api_token'   => env('IMAGE_SERVICE_TOKEN'),
+    ],
+
 ];
