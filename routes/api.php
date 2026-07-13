@@ -134,13 +134,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('closing-stores')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\ClosingStoreController::class, 'index']);
         Route::get('/active-draft', [\App\Http\Controllers\Api\ClosingStoreController::class, 'activeDraft']);
-        Route::get('/{id}', [\App\Http\Controllers\Api\ClosingStoreController::class, 'show']);
         Route::get('/unpaid-transactions', [\App\Http\Controllers\Api\ClosingStoreController::class, 'unpaidTransactions']);
         Route::post('/save', [\App\Http\Controllers\Api\ClosingStoreController::class, 'save']);
         Route::get('/fuel-services', [\App\Http\Controllers\Api\ClosingStoreController::class, 'indexFuelServices']);
         Route::post('/fuel-services', [\App\Http\Controllers\Api\ClosingStoreController::class, 'createFuelService']);
         Route::get('/vehicles', [\App\Http\Controllers\Api\ClosingStoreController::class, 'vehicles']);
         Route::get('/suppliers', [\App\Http\Controllers\Api\ClosingStoreController::class, 'suppliers']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\ClosingStoreController::class, 'show']);
     });
 
     Route::prefix('suppliers')->group(function () {
