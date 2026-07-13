@@ -55,4 +55,9 @@ class InvoicePurchase extends Model
         return $this->belongsToMany(PaymentReceipt::class)
             ->distinct();
     }
+
+    public function closingStores()
+    {
+        return $this->belongsToMany(ClosingStore::class);
+    }
 }

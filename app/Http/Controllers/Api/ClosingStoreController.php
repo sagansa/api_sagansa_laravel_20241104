@@ -68,22 +68,34 @@ class ClosingStoreController extends Controller
         $storeId = $closingStore->store_id;
 
         // Fetch unpaid/available transactions, including those already linked to this closing store
-        $fuelServicesQuery = FuelService::where('store_id', $storeId)
+        $fuelServicesQuery = FuelService::where('payment_type_id', 2) // Cash
+            ->where('store_id', $storeId)
+            ->whereDate('date', '>=', Carbon::now()->subDays(10)->toDateString())
             ->where(function ($q) use ($closingStore) {
-                $q->whereNull('closing_store_id')
-                  ->orWhere('closing_store_id', $closingStore->id);
+                $q->whereDoesntHave('closingStores')
+                  ->orWhereHas('closingStores', function ($q2) use ($closingStore) {
+                      $q2->where('closing_stores.id', $closingStore->id);
+                  });
             });
 
-        $dailySalariesQuery = DailySalary::where('store_id', $storeId)
+        $dailySalariesQuery = DailySalary::where('payment_type_id', 2) // Cash
+            ->where('store_id', $storeId)
+            ->whereDate('date', '>=', Carbon::now()->subDays(15)->toDateString())
             ->where(function ($q) use ($closingStore) {
-                $q->whereNull('closing_store_id')
-                  ->orWhere('closing_store_id', $closingStore->id);
+                $q->whereDoesntHave('closingStores')
+                  ->orWhereHas('closingStores', function ($q2) use ($closingStore) {
+                      $q2->where('closing_stores.id', $closingStore->id);
+                  });
             });
 
-        $invoicePurchasesQuery = InvoicePurchase::where('store_id', $storeId)
+        $invoicePurchasesQuery = InvoicePurchase::where('payment_type_id', 2) // Cash
+            ->where('store_id', $storeId)
+            ->whereDate('date', '>=', Carbon::now()->subDays(15)->toDateString())
             ->where(function ($q) use ($closingStore) {
-                $q->whereNull('closing_store_id')
-                  ->orWhere('closing_store_id', $closingStore->id);
+                $q->whereDoesntHave('closingStores')
+                  ->orWhereHas('closingStores', function ($q2) use ($closingStore) {
+                      $q2->where('closing_stores.id', $closingStore->id);
+                  });
             });
 
         if ($user->hasRole('staff')) {

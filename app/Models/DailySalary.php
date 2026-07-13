@@ -42,4 +42,9 @@ class DailySalary extends Model
     {
         return $this->belongsTo(Presence::class);
     }
+
+    public function closingStores()
+    {
+        return $this->belongsToMany(ClosingStore::class);
+    }
 }
