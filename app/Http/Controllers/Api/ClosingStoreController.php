@@ -42,6 +42,72 @@ class ClosingStoreController extends Controller
     }
 
     /**
+     * Show details of a specific closing store.
+     */
+    public function show(Request $request, $id)
+    {
+        $user = $request->user();
+        $closingStore = ClosingStore::with([
+            'store',
+            'shiftStore',
+            'createdBy',
+            'cashlesses.accountCashless.cashlessProvider',
+            'cashlesses.accountCashless.storeCashless',
+            'fuelServices',
+            'dailySalaries.user',
+            'invoicePurchases'
+        ])->findOrFail($id);
+
+        if ($user->hasRole('staff') && $closingStore->created_by_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses ke laporan closing store ini.'
+            ], 403);
+        }
+
+        $storeId = $closingStore->store_id;
+
+        // Fetch unpaid/available transactions, including those already linked to this closing store
+        $fuelServicesQuery = FuelService::where('store_id', $storeId)
+            ->where(function ($q) use ($closingStore) {
+                $q->whereNull('closing_store_id')
+                  ->orWhere('closing_store_id', $closingStore->id);
+            });
+
+        $dailySalariesQuery = DailySalary::where('store_id', $storeId)
+            ->where(function ($q) use ($closingStore) {
+                $q->whereNull('closing_store_id')
+                  ->orWhere('closing_store_id', $closingStore->id);
+            });
+
+        $invoicePurchasesQuery = InvoicePurchase::where('store_id', $storeId)
+            ->where(function ($q) use ($closingStore) {
+                $q->whereNull('closing_store_id')
+                  ->orWhere('closing_store_id', $closingStore->id);
+            });
+
+        if ($user->hasRole('staff')) {
+            $fuelServicesQuery->where('created_by_id', $user->id);
+            $dailySalariesQuery->where('created_by_id', $user->id);
+            $invoicePurchasesQuery->where('created_by_id', $user->id);
+        }
+
+        $fuelServices = $fuelServicesQuery->orderBy('date', 'desc')->get();
+        $dailySalaries = $dailySalariesQuery->orderBy('date', 'desc')->get();
+        $invoicePurchases = $invoicePurchasesQuery->orderBy('date', 'desc')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'closing_store' => $closingStore,
+                'fuel_services' => $fuelServices,
+                'daily_salaries' => $dailySalaries,
+                'invoice_purchases' => $invoicePurchases
+            ]
+        ]);
+    }
+
+    /**
      * Get today's active draft or create it.
      */
     public function activeDraft(Request $request)

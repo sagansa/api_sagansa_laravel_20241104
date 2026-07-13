@@ -134,6 +134,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('closing-stores')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\ClosingStoreController::class, 'index']);
         Route::get('/active-draft', [\App\Http\Controllers\Api\ClosingStoreController::class, 'activeDraft']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\ClosingStoreController::class, 'show']);
         Route::get('/unpaid-transactions', [\App\Http\Controllers\Api\ClosingStoreController::class, 'unpaidTransactions']);
         Route::post('/save', [\App\Http\Controllers\Api\ClosingStoreController::class, 'save']);
         Route::get('/fuel-services', [\App\Http\Controllers\Api\ClosingStoreController::class, 'indexFuelServices']);
