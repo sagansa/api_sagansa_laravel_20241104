@@ -19,6 +19,29 @@ use Illuminate\Support\Facades\DB;
 class ClosingStoreController extends Controller
 {
     /**
+     * List closing stores.
+     * Staff can only view their own; admin/managers can view all stores.
+     */
+    public function index(Request $request)
+    {
+        $user = $request->user();
+        $query = ClosingStore::with(['store', 'shiftStore', 'createdBy'])
+            ->orderBy('date', 'desc')
+            ->orderBy('created_at', 'desc');
+
+        if ($user->hasRole('staff')) {
+            $query->where('created_by_id', $user->id);
+        }
+
+        $list = $query->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $list
+        ]);
+    }
+
+    /**
      * Get today's active draft or create it.
      */
     public function activeDraft(Request $request)
@@ -236,6 +259,12 @@ class ClosingStoreController extends Controller
      */
     public function createFuelService(Request $request)
     {
+        if (is_string($request->input('service_details'))) {
+            $request->merge([
+                'service_details' => json_decode($request->input('service_details'), true)
+            ]);
+        }
+
         $request->validate([
             'closing_store_id' => 'nullable|exists:closing_stores,id',
             'date' => 'required|date',
@@ -248,6 +277,7 @@ class ClosingStoreController extends Controller
             'amount' => 'required|numeric',
             'notes' => 'nullable|string',
             'service_details' => 'nullable|array',
+            'image' => 'required|image|max:10240', // Max 10MB
         ]);
         
         $closingStoreId = $request->input('closing_store_id');
@@ -270,6 +300,14 @@ class ClosingStoreController extends Controller
                 ], 400);
             }
         }
+
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload(
+                $request->file('image'),
+                'images/FuelService'
+            );
+        }
         
         $fuelService = FuelService::create([
             'store_id' => $storeId,
@@ -285,6 +323,7 @@ class ClosingStoreController extends Controller
             'status' => 1, // Pending/unpaid
             'created_by_id' => $request->user()->id,
             'service_details' => $request->input('service_details'),
+            'image' => $imagePath,
         ]);
         
         // Automatically link it if closing_store_id was provided

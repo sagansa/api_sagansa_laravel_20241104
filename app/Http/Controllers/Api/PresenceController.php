@@ -259,7 +259,7 @@ class PresenceController extends Controller
                 'status' => 'required|in:1,2,3',
                 'latitude_in' => 'required|numeric|between:-90,90',
                 'longitude_in' => 'required|numeric|between:-180,180',
-                'image_in' => 'required|image|mimes:jpeg,png,jpg',
+                'image_in' => 'required|image|mimes:jpeg,png,jpg,webp,heic,heif',
             ];
 
             $request->validate($validationRules);
@@ -403,7 +403,7 @@ class PresenceController extends Controller
             $request->validate([
                 'latitude_out' => 'required|numeric|between:-90,90',
                 'longitude_out' => 'required|numeric|between:-180,180',
-                'image_out' => 'required|image|mimes:jpeg,png,jpg',
+                'image_out' => 'required|image|mimes:jpeg,png,jpg,webp,heic,heif',
                 'daily_salary_amount' => 'required|numeric|min:0',
                 'daily_salary_payment_type_id' => 'required|exists:payment_types,id',
             ]);

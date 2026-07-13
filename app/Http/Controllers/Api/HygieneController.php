@@ -27,12 +27,19 @@ class HygieneController extends Controller
 
     public function todayStatus(Request $request)
     {
-        $userId = $request->user()->id;
         $today = Carbon::today();
+        $storeId = $request->query('store_id');
 
-        $existing = Hygiene::where('created_by_id', $userId)
-            ->whereDate('created_at', $today)
-            ->exists();
+        if ($storeId) {
+            $existing = Hygiene::where('store_id', $storeId)
+                ->whereDate('created_at', $today)
+                ->exists();
+        } else {
+            $userId = $request->user()->id;
+            $existing = Hygiene::where('created_by_id', $userId)
+                ->whereDate('created_at', $today)
+                ->exists();
+        }
 
         return response()->json([
             'status' => 'success',

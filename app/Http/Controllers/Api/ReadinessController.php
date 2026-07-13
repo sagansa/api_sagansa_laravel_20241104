@@ -50,9 +50,9 @@ class ReadinessController extends Controller
         }
 
         $request->validate([
-            'image_selfie' => 'required|image|mimes:jpeg,png,jpg',
-            'left_hand' => 'required|image|mimes:jpeg,png,jpg',
-            'right_hand' => 'required|image|mimes:jpeg,png,jpg',
+            'image_selfie' => 'required|image|mimes:jpeg,png,jpg,webp,heic,heif',
+            'left_hand' => 'required|image|mimes:jpeg,png,jpg,webp,heic,heif',
+            'right_hand' => 'required|image|mimes:jpeg,png,jpg,webp,heic,heif',
         ]);
 
         $imageSelfiePath = null;

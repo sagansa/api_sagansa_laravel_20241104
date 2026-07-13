@@ -555,7 +555,7 @@ class ProcurementController extends Controller
             'transfer_amount' => 'required|numeric|min:1',
             'total_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string|max:500',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,heic,heif|max:5120',
         ]);
 
         if ($validator->fails()) {

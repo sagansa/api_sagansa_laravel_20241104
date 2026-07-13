@@ -44,9 +44,8 @@ class FaceValidationMiddleware
             ], 422);
         }
 
-        // Validate face image
         $validator = validator($request->all(), [
-            'face_image' => 'required|image|mimes:jpeg,png,jpg,gif|max:10240',
+            'face_image' => 'required|image|mimes:jpeg,png,jpg,gif,webp,heic,heif|max:10240',
         ]);
 
         if ($validator->fails()) {
