@@ -125,6 +125,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\Api\TransferStockController::class, 'show']);
     });
 
+    Route::get('/utilities', [\App\Http\Controllers\Api\UtilityController::class, 'index']);
+    Route::prefix('utility-usages')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\UtilityUsageController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\UtilityUsageController::class, 'store']);
+        Route::get('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'show']);
+        Route::post('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'update']);
+        Route::delete('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'destroy']);
+    });
 
     Route::prefix('readiness')->group(function () {
         Route::get('/status', [\App\Http\Controllers\Api\ReadinessController::class, 'checkStatus']);
