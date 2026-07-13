@@ -118,6 +118,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\Api\StorageStockController::class, 'show']);
     });
 
+    Route::prefix('transfer-stocks')->group(function () {
+        Route::get('/products', [\App\Http\Controllers\Api\TransferStockController::class, 'products']);
+        Route::get('/', [\App\Http\Controllers\Api\TransferStockController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\TransferStockController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\TransferStockController::class, 'show']);
+    });
+
+
     Route::prefix('readiness')->group(function () {
         Route::get('/status', [\App\Http\Controllers\Api\ReadinessController::class, 'checkStatus']);
         Route::post('/', [\App\Http\Controllers\Api\ReadinessController::class, 'store']);

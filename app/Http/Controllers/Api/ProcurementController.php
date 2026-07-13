@@ -549,6 +549,14 @@ class ProcurementController extends Controller
      */
     public function storePaymentReceipt(Request $request)
     {
+        $user = $request->user();
+        if ($user->hasRole('staff') || $user->hasRole('storage-staff')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk membuat bukti pembayaran (payment receipt).'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'invoice_ids' => 'required|array|min:1',
             'invoice_ids.*' => 'exists:invoice_purchases,id',

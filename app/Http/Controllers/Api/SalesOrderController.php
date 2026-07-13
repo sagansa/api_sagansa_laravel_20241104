@@ -246,7 +246,7 @@ class SalesOrderController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'receipt_no' => 'required|string',
-            'image_delivery' => 'required|image|max:5120', // max 5MB
+            'image_delivery' => 'required_if:delivery_status,3|image|max:5120', // max 5MB (required only if status is 3)
             'received_by' => 'nullable|string|max:255',
             'delivery_status' => 'nullable|in:3,6',
             'notes' => 'nullable|string',
