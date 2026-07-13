@@ -197,6 +197,13 @@ class ClosingStoreController extends Controller
         
         $closingStore = ClosingStore::findOrFail($request->input('id'));
         
+        if ($request->user()->hasRole('staff') && $closingStore->status !== 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Laporan Closing Store sudah diperiksa oleh admin dan tidak dapat diedit lagi.'
+            ], 403);
+        }
+
         $closingStore->update([
             'cash_for_tomorrow' => $request->input('cash_for_tomorrow'),
             'total_cash_transfer' => $request->input('total_cash_transfer'),
