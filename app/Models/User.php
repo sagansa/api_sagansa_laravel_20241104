@@ -59,9 +59,4 @@ class User extends Authenticatable
     {
         return $this->hasMany(Store::class);
     }
-
-    public function dailySalaries()
-    {
-        return $this->hasMany(DailySalary::class, 'created_by_id');
-    }
 }

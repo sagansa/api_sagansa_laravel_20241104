@@ -67,7 +67,20 @@ class DailySalaryController extends Controller
      */
     public function employees()
     {
-        $employees = User::whereHas('dailySalaries')
+        // Get user IDs from daily_salaries table (different connection)
+        $userIds = DailySalary::distinct()
+            ->whereNotNull('created_by_id')
+            ->pluck('created_by_id')
+            ->toArray();
+
+        if (empty($userIds)) {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+            ]);
+        }
+
+        $employees = User::whereIn('id', $userIds)
             ->orderBy('name')
             ->get(['id', 'name']);
 
