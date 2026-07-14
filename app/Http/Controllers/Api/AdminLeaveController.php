@@ -129,8 +129,9 @@ class AdminLeaveController extends Controller
             ], 404);
         }
 
-        // Check if already approved or rejected
-        if ($leave->status !== PermitEmployee::STATUS_PENDING && $leave->status !== PermitEmployee::STATUS_RESUBMIT) {
+        // Check if already approved or rejected (use loose comparison for type safety)
+        $status = (string) $leave->status;
+        if ($status != PermitEmployee::STATUS_PENDING && $status != PermitEmployee::STATUS_RESUBMIT) {
             return response()->json([
                 'success' => false,
                 'message' => 'Permintaan cuti sudah diproses sebelumnya'
@@ -179,8 +180,9 @@ class AdminLeaveController extends Controller
             ], 404);
         }
 
-        // Check if already approved or rejected
-        if ($leave->status !== PermitEmployee::STATUS_PENDING && $leave->status !== PermitEmployee::STATUS_RESUBMIT) {
+        // Check if already approved or rejected (use loose comparison for type safety)
+        $status = (string) $leave->status;
+        if ($status != PermitEmployee::STATUS_PENDING && $status != PermitEmployee::STATUS_RESUBMIT) {
             return response()->json([
                 'success' => false,
                 'message' => 'Permintaan cuti sudah diproses sebelumnya'
