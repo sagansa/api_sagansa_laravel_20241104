@@ -83,7 +83,7 @@ class DailySalaryController extends Controller
 
         $employees = User::whereIn('id', $userIds)
             ->whereHas('roles', function ($query) {
-                $query->whereIn('name', ['staff', 'former employee']);
+                $query->whereIn('name', ['staff', 'former-employee']);
             })
             ->orderBy('name')
             ->get(['id', 'name']);
