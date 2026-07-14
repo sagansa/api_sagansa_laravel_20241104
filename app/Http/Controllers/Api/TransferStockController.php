@@ -44,8 +44,14 @@ class TransferStockController extends Controller
             'productTransferStocks.product.unit',
         ]);
 
-        // Filter by store if user is not superadmin/admin
-        if ($user->store_id) {
+        // Staff: only see transfers they sent or received
+        if ($user->hasRole('staff')) {
+            $query->where(function ($q) use ($user) {
+                $q->where('sent_by_id', $user->id)
+                  ->orWhere('received_by_id', $user->id);
+            });
+        } elseif ($user->store_id && !$user->hasRole('admin') && !$user->hasRole('super_admin')) {
+            // Other non-admin roles: filter by store
             $query->where(function ($q) use ($user) {
                 $q->where('from_store_id', $user->store_id)
                   ->orWhere('to_store_id', $user->store_id);
