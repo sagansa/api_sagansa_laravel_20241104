@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\StorageStock;
-use App\Models\ProductStorageStock;
+use App\Models\RemainingStorage;
+use App\Models\DetailStockCard;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,15 +31,16 @@ class StorageStockController extends Controller
     }
 
     /**
-     * Get list of storage stocks.
+     * Get list of storage stocks (remaining_storage reports from stock_cards).
      */
     public function index(Request $request)
     {
-        $query = StorageStock::with(['store', 'createdBy', 'productStorageStocks.product.unit']);
+        $query = RemainingStorage::with(['store', 'user', 'detailStockCards.product.unit'])
+            ->where('for', 'remaining_storage');
 
         // Staff only sees their own records
         if ($request->user()->hasRole('staff')) {
-            $query->where('created_by_id', $request->user()->id);
+            $query->where('user_id', $request->user()->id);
         }
 
         $requests = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
@@ -51,15 +52,17 @@ class StorageStockController extends Controller
     }
 
     /**
-     * Get detail of a specific storage stock.
+     * Get detail of a specific storage stock (remaining_storage report).
      */
     public function show($id, Request $request)
     {
-        $storageStock = StorageStock::with([
-            'store', 
-            'createdBy', 
-            'productStorageStocks.product.unit'
-        ])->find($id);
+        $storageStock = RemainingStorage::with([
+            'store',
+            'user',
+            'detailStockCards.product.unit'
+        ])
+            ->where('for', 'remaining_storage')
+            ->find($id);
 
         if (!$storageStock) {
             return response()->json([
@@ -75,7 +78,7 @@ class StorageStockController extends Controller
     }
 
     /**
-     * Store new storage stock.
+     * Store new storage stock (writes to stock_cards + detail_stock_cards).
      */
     public function store(Request $request)
     {
@@ -94,12 +97,22 @@ class StorageStockController extends Controller
             ], 422);
         }
 
+        // Validasi window waktu: 22:00 - 11:00 (sesuai referensi admin)
+        $hour = (int) Carbon::now()->format('H');
+        if ($hour >= 11 && $hour < 22) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Laporan hanya bisa dibuat antara jam 22.00 hingga 11.00 keesokan harinya.'
+            ], 422);
+        }
+
         $today = Carbon::now()->toDateString();
 
-        // 2. Validasi Duplikasi: Hanya 1 kali sehari untuk store yang sama
-        $existingReport = StorageStock::where('store_id', $request->store_id)
+        // Validasi Duplikasi: Hanya 1 kali sehari untuk store yang sama
+        $existingReport = RemainingStorage::where('for', 'remaining_storage')
+            ->where('store_id', $request->store_id)
             ->where('date', $today)
-            ->first();
+            ->exists();
 
         if ($existingReport) {
             return response()->json([
@@ -108,28 +121,39 @@ class StorageStockController extends Controller
             ], 422);
         }
 
-        return DB::transaction(function () use ($request, $today) {
-            $storageStock = StorageStock::create([
+        DB::beginTransaction();
+        try {
+            $storageStock = RemainingStorage::create([
+                'for' => 'remaining_storage',
                 'store_id' => $request->store_id,
                 'date' => $today,
-                'created_by_id' => $request->user()->id,
+                'user_id' => $request->user()->id,
                 'status' => 1, // Default status: Draft/Pending/Submitted
             ]);
 
             foreach ($request->items as $item) {
-                ProductStorageStock::create([
-                    'storage_stock_id' => $storageStock->id,
+                DetailStockCard::create([
+                    'stock_card_id' => $storageStock->id,
                     'product_id' => $item['product_id'],
                     'quantity' => $item['quantity'],
                 ]);
             }
 
+            DB::commit();
+
             return response()->json([
                 'success' => true,
                 'message' => 'Laporan Stok Sisa berhasil disimpan.',
-                'data' => $storageStock->load('productStorageStocks')
+                'data' => $storageStock->load('detailStockCards')
             ], 201);
-        });
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan laporan stok sisa: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -138,24 +162,26 @@ class StorageStockController extends Controller
     public function todayStatus(Request $request)
     {
         $today = Carbon::now()->toDateString();
-        
+
         $totalStores = \App\Models\Store::where('status', '<>', '8')->count();
-        $reportedStores = StorageStock::where('date', $today)
+        $reportedStores = RemainingStorage::where('for', 'remaining_storage')
+            ->where('date', $today)
             ->distinct('store_id')
             ->count('store_id');
-        
+
         $userStoreReported = false;
         if ($request->user()->hasRole('storage-staff')) {
             $presence = \App\Models\Presence::where('created_by_id', $request->user()->id)
                 ->whereDate('check_in', $today)
                 ->first();
             if ($presence) {
-                $userStoreReported = StorageStock::where('date', $today)
+                $userStoreReported = RemainingStorage::where('for', 'remaining_storage')
+                    ->where('date', $today)
                     ->where('store_id', $presence->store_id)
                     ->exists();
             }
         }
-        
+
         return response()->json([
             'success' => true,
             'total_stores' => $totalStores,
