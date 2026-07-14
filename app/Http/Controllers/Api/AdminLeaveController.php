@@ -142,7 +142,6 @@ class AdminLeaveController extends Controller
             'status' => PermitEmployee::STATUS_APPROVED,
             'approved_by_id' => Auth::id(),
             'approved_at' => now(),
-            'admin_notes' => $request->input('notes', 'Permintaan cuti disetujui')
         ]);
 
         $leave->load(['createdBy', 'approvedBy']);
@@ -193,7 +192,6 @@ class AdminLeaveController extends Controller
             'status' => PermitEmployee::STATUS_REJECTED,
             'approved_by_id' => Auth::id(),
             'approved_at' => now(),
-            'admin_notes' => $request->input('reject_note', 'Permintaan cuti ditolak')
         ]);
 
         $leave->load(['createdBy', 'approvedBy']);
