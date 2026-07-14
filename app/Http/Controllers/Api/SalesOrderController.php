@@ -3,10 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\SalesOrderOnline;
+use App\Models\DetailSalesOrder;
+use App\Models\OnlineShopProvider;
+use App\Models\DeliveryService;
+use App\Models\Product;
+use App\Contracts\ImageStorageContract;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 class SalesOrderController extends Controller
 {
@@ -380,6 +387,151 @@ class SalesOrderController extends Controller
                 'delivery_status' => 4,
             ],
         ]);
+    }
+
+    /**
+     * Daftar online shop provider untuk dropdown form.
+     */
+    public function onlineShopProviders(Request $request)
+    {
+        $providers = OnlineShopProvider::orderBy('name', 'asc')->get(['id', 'name']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $providers,
+        ]);
+    }
+
+    /**
+     * Daftar delivery service (yang aktif) untuk dropdown form.
+     */
+    public function deliveryServices(Request $request)
+    {
+        $services = DeliveryService::where('status', '1')
+            ->orderBy('name', 'asc')
+            ->get(['id', 'name']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $services,
+        ]);
+    }
+
+    /**
+     * Daftar produk yang bisa dijual online (whereNotIn online_category_id [4]).
+     */
+    public function onlineProducts(Request $request)
+    {
+        $products = Product::with('unit')
+            ->whereNotIn('online_category_id', [4])
+            ->orderBy('name', 'asc')
+            ->get(['id', 'name', 'unit_id']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $products->map(fn ($p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'unit' => $p->unit?->unit ?? '',
+            ]),
+        ]);
+    }
+
+    /**
+     * Buat sales order online (for = 3).
+     */
+    public function storeOnline(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'store_id' => 'required|exists:stores,id',
+            'delivery_date' => 'required|date',
+            'online_shop_provider_id' => 'required|exists:online_shop_providers,id',
+            'delivery_service_id' => 'required|exists:delivery_services,id',
+            'receipt_no' => 'required|string|max:255',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_price' => 'required|integer|min:0',
+            'image_payment' => 'nullable|image|mimes:jpeg,png,jpg,webp,heic,heif|max:5120',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Validasi receipt_no unik
+        $exists = SalesOrderOnline::where('receipt_no', $request->receipt_no)->exists();
+        if ($exists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nomor resi sudah digunakan pada order lain.',
+            ], 422);
+        }
+
+        // Hitung subtotal & total
+        $items = [];
+        $totalPrice = 0;
+        foreach ($request->items as $item) {
+            $subtotal = (int) $item['quantity'] * (int) $item['unit_price'];
+            $items[] = [
+                'product_id' => $item['product_id'],
+                'quantity' => $item['quantity'],
+                'unit_price' => $item['unit_price'],
+                'subtotal_price' => $subtotal,
+            ];
+            $totalPrice += $subtotal;
+        }
+
+        DB::beginTransaction();
+        try {
+            // Upload image_payment (jika ada) via ImageStorageContract
+            $imagePaymentPath = null;
+            if ($request->hasFile('image_payment')) {
+                $imagePaymentPath = app(ImageStorageContract::class)
+                    ->upload($request->file('image_payment'), 'images/Online/Payment');
+            }
+
+            $order = SalesOrderOnline::create([
+                'for' => '3',
+                'store_id' => $request->store_id,
+                'delivery_date' => $request->delivery_date,
+                'online_shop_provider_id' => $request->online_shop_provider_id,
+                'delivery_service_id' => $request->delivery_service_id,
+                'receipt_no' => $request->receipt_no,
+                'image_payment' => $imagePaymentPath,
+                'payment_status' => '2',
+                'delivery_status' => '1',
+                'shipping_cost' => 0,
+                'ordered_by_id' => $request->user()->id,
+                'total_price' => $totalPrice,
+            ]);
+
+            foreach ($items as $item) {
+                DetailSalesOrder::create(array_merge(
+                    ['sales_order_id' => $order->id],
+                    $item
+                ));
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Sales order online berhasil dibuat.',
+                'data' => $order->load('detailSalesOrders'),
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat sales order online: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     private function getStorageUrl($path)

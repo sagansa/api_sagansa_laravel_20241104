@@ -67,6 +67,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/stores', [PresenceController::class, 'getStores']);
     Route::get('/shift-stores', [PresenceController::class, 'getShiftStores']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/users', function (\Illuminate\Http\Request $request) {
+        return response()->json([
+            'success' => true,
+            'data' => \App\Models\User::where('status', '1')
+                ->orderBy('name')
+                ->get(['id', 'name'])
+        ]);
+    });
 
     // Employee location tracking (mobile ingestion)
     Route::post('/location', [LocationController::class, 'store']);
@@ -78,6 +86,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sales-orders/ready-to-ship', [\App\Http\Controllers\Api\SalesOrderController::class, 'markReadyToShip']);
     Route::post('/sales-orders/delivery-update', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateDelivery']);
     Route::post('/sales-orders/payment-proofs/printed', [\App\Http\Controllers\Api\SalesOrderController::class, 'markPaymentProofsPrinted']);
+
+    // Sales Order Online - Create (admin)
+    Route::get('/sales-orders/online-shop-providers', [\App\Http\Controllers\Api\SalesOrderController::class, 'onlineShopProviders']);
+    Route::get('/sales-orders/delivery-services', [\App\Http\Controllers\Api\SalesOrderController::class, 'deliveryServices']);
+    Route::get('/sales-orders/online-products', [\App\Http\Controllers\Api\SalesOrderController::class, 'onlineProducts']);
+    Route::post('/sales-orders/online', [\App\Http\Controllers\Api\SalesOrderController::class, 'storeOnline']);
 
     Route::prefix('leaves')->group(function () {
         Route::get('/', [LeaveController::class, 'index']);
@@ -101,6 +115,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/requests/items/{id}/reject', [\App\Http\Controllers\Api\ProcurementController::class, 'rejectItem']);
         Route::post('/requests/items/{id}/cancel', [\App\Http\Controllers\Api\ProcurementController::class, 'cancelItem']);
         Route::post('/requests/{id}/create-invoice', [\App\Http\Controllers\Api\ProcurementController::class, 'createInvoice']);
+        Route::get('/detail-requests', [\App\Http\Controllers\Api\ProcurementController::class, 'detailRequests']);
+        Route::post('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'storeInvoice']);
         Route::get('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'invoices']);
         Route::get('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showInvoice']);
         Route::put('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'updateInvoice']);
