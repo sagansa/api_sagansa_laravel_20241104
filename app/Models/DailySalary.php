@@ -43,6 +43,16 @@ class DailySalary extends Model
         return $this->belongsTo(Presence::class);
     }
 
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function approvedBy()
+    {
+        return $this->belongsTo(User::class, 'approved_by_id');
+    }
+
     public function closingStores()
     {
         return $this->belongsToMany(ClosingStore::class);
