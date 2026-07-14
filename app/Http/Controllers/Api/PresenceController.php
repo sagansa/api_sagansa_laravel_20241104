@@ -150,6 +150,7 @@ class PresenceController extends Controller
         // Format response dengan waktu lokal
         return [
             'id' => $presence->id,
+            'store_id' => $presence->store_id,
             'store' => $presence->store ? $presence->store->nickname : null,
             'shift_store' => $presence->shiftStore ? $presence->shiftStore->name : null,
             'status' => $presence->status,

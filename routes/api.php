@@ -103,6 +103,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/requests/{id}/create-invoice', [\App\Http\Controllers\Api\ProcurementController::class, 'createInvoice']);
         Route::get('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'invoices']);
         Route::get('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showInvoice']);
+        Route::put('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'updateInvoice']);
         Route::get('/payment-receipts', [\App\Http\Controllers\Api\ProcurementController::class, 'paymentReceipts']);
         Route::get('/payment-receipts/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showPaymentReceipt']);
         Route::get('/payment-receipts/{id}/qris', [\App\Http\Controllers\Api\ProcurementController::class, 'paymentReceiptQris']);
@@ -132,6 +133,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'show']);
         Route::post('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'update']);
         Route::delete('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'destroy']);
+        Route::get('/store/{storeId}/pending', [\App\Http\Controllers\Api\UtilityUsageController::class, 'checkPendingReports']);
     });
 
     Route::prefix('readiness')->group(function () {

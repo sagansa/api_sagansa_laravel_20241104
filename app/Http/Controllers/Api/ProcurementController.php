@@ -275,6 +275,11 @@ class ProcurementController extends Controller
             'store', 'supplier', 'detailInvoices', 'createdBy'
         ]);
 
+        // Staff/supervisor only see invoices they created
+        if (!$request->user()->hasRole('admin')) {
+            $query->where('created_by_id', $request->user()->id);
+        }
+
         if ($request->has('order_status')) {
             $query->where('order_status', $request->order_status);
         }
@@ -364,7 +369,6 @@ class ProcurementController extends Controller
         }
 
         // Check for duplicate items from different requests (already scoped by request id)
-
         return DB::transaction(function () use ($requestPurchase, $validItems, $request) {
             $totalPrice = 0;
             $itemData = [];
@@ -443,6 +447,94 @@ class ProcurementController extends Controller
         });
     }
 
+    public function updateInvoice($id, Request $request)
+    {
+        $user = $request->user();
+        $invoice = InvoicePurchase::with('detailInvoices')->find($id);
+
+        if (!$invoice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice tidak ditemukan.'
+            ], 404);
+        }
+
+        if ($invoice->payment_status !== '1') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya invoice draft yang dapat diedit.'
+            ], 400);
+        }
+
+        $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin');
+        if (!$isAdmin && $invoice->created_by_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk mengedit invoice ini.'
+            ], 403);
+        }
+
+        $request->validate([
+            'supplier_id' => 'nullable|exists:suppliers,id',
+            'payment_type_id' => 'nullable|integer',
+            'taxes' => 'nullable|numeric|min:0',
+            'discounts' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string',
+            'items' => 'nullable|array',
+            'items.*.detail_invoice_id' => 'required_with:items|exists:detail_invoices,id',
+            'items.*.price' => 'required_with:items|numeric|min:0',
+            'items.*.quantity' => 'required_with:items|numeric|min:1',
+        ]);
+
+        return DB::transaction(function () use ($invoice, $request) {
+            if ($request->filled('supplier_id')) {
+                $invoice->supplier_id = $request->supplier_id;
+            }
+            if ($request->filled('payment_type_id')) {
+                $invoice->payment_type_id = $request->payment_type_id;
+            }
+            if ($request->has('taxes')) {
+                $invoice->taxes = (int) ($request->taxes ?? 0);
+            }
+            if ($request->has('discounts')) {
+                $invoice->discounts = (int) ($request->discounts ?? 0);
+            }
+            if ($request->has('notes')) {
+                $invoice->notes = $request->notes;
+            }
+
+            $totalPrice = 0;
+            if ($request->has('items')) {
+                foreach ($request->items as $item) {
+                    $detail = $invoice->detailInvoices
+                        ->firstWhere('id', $item['detail_invoice_id']);
+                    if (!$detail) continue;
+                    $subtotal = (int) $item['price'] * (int) $item['quantity'];
+                    $detail->update([
+                        'quantity_product' => $item['quantity'],
+                        'subtotal_invoice' => $subtotal,
+                    ]);
+                    $totalPrice += $subtotal;
+                }
+            } else {
+                $totalPrice = $invoice->detailInvoices->sum('subtotal_invoice');
+            }
+
+            $invoice->total_price = $totalPrice + ($invoice->taxes ?? 0) - ($invoice->discounts ?? 0);
+            $invoice->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Invoice berhasil diperbarui.',
+                'data' => $invoice->load([
+                    'store', 'supplier', 'createdBy',
+                    'detailInvoices.detailRequest.product.unit',
+                    'detailInvoices.detailRequest.paymentType',
+                ]),
+            ]);
+        });
+    }
+
     /**
      * Get list of payment receipts (for invoice purchases).
      */
@@ -501,6 +593,13 @@ class ProcurementController extends Controller
      */
     public function paymentReceiptQris($id, Request $request)
     {
+        if ($request->user()->hasRole('staff')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk generate QRIS.'
+            ], 403);
+        }
+
         $receipt = PaymentReceipt::with('supplier')->find($id);
 
         if (!$receipt) {
@@ -624,6 +723,93 @@ class ProcurementController extends Controller
                 'success' => true,
                 'message' => 'Payment receipt berhasil dibuat.',
                 'data' => $receipt->load('invoicePurchases')
+            ], 201);
+        });
+    }
+
+    public function detailRequests(Request $request)
+    {
+        $request->validate([
+            'store_id' => 'required|exists:stores,id',
+            'payment_type_id' => 'nullable|integer',
+        ]);
+
+        $query = DetailRequest::with([
+            'product.unit', 'requestPurchase.store', 'paymentType'
+        ])
+        ->where('store_id', $request->store_id)
+        ->where('status', '4'); // Approved items only
+
+        if ($request->filled('payment_type_id')) {
+            $query->where('payment_type_id', $request->payment_type_id);
+        }
+
+        $items = $query->orderBy('id', 'desc')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $items,
+        ]);
+    }
+
+    public function storeInvoice(Request $request)
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'supplier_id' => 'required|exists:suppliers,id',
+            'store_id' => 'required|exists:stores,id',
+            'payment_type_id' => 'required|integer',
+            'date' => 'required|date',
+            'items' => 'required|array|min:1',
+            'items.*.detail_request_id' => 'required|exists:detail_requests,id',
+            'items.*.quantity_product' => 'required|numeric|min:1',
+            'items.*.subtotal_invoice' => 'required|numeric|min:0',
+            'taxes' => 'nullable|numeric|min:0',
+            'discounts' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string',
+        ]);
+
+        return DB::transaction(function () use ($request, $user) {
+            $totalPrice = 0;
+            foreach ($request->items as $item) {
+                $totalPrice += (int) $item['subtotal_invoice'];
+            }
+            $taxes = (int) ($request->taxes ?? 0);
+            $discounts = (int) ($request->discounts ?? 0);
+            $totalPrice = $totalPrice + $taxes - $discounts;
+
+            $invoice = InvoicePurchase::create([
+                'store_id' => $request->store_id,
+                'supplier_id' => $request->supplier_id,
+                'payment_type_id' => $request->payment_type_id,
+                'date' => $request->date,
+                'total_price' => $totalPrice,
+                'taxes' => $taxes,
+                'discounts' => $discounts,
+                'notes' => $request->notes,
+                'created_by_id' => $user->id,
+                'payment_status' => '1',
+                'order_status' => '1',
+            ]);
+
+            foreach ($request->items as $item) {
+                DetailInvoice::create([
+                    'invoice_purchase_id' => $invoice->id,
+                    'detail_request_id' => $item['detail_request_id'],
+                    'quantity_product' => $item['quantity_product'],
+                    'subtotal_invoice' => $item['subtotal_invoice'],
+                    'status' => '3',
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Invoice berhasil dibuat.',
+                'data' => $invoice->load([
+                    'store', 'supplier', 'createdBy',
+                    'detailInvoices.detailRequest.product.unit',
+                ]),
             ], 201);
         });
     }

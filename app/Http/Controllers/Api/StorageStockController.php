@@ -37,6 +37,11 @@ class StorageStockController extends Controller
     {
         $query = StorageStock::with(['store', 'createdBy', 'productStorageStocks.product.unit']);
 
+        // Staff only sees their own records
+        if ($request->user()->hasRole('staff')) {
+            $query->where('created_by_id', $request->user()->id);
+        }
+
         $requests = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
 
         return response()->json([

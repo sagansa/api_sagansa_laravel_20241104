@@ -11,14 +11,35 @@ class UtilityUsageController extends Controller
 {
     public function index(Request $request)
     {
-        $usages = UtilityUsage::with([
+        $query = UtilityUsage::with([
             'utility.store:id,nickname',
             'utility.utilityProvider:id,name',
+            'utility.unit:id,unit',
             'createdBy:id,name',
             'approvedBy:id,name',
-        ])
-            ->orderBy('id', 'desc')
-            ->paginate(20);
+        ]);
+
+        if ($request->filled('store_id')) {
+            $query->whereHas('utility', fn($q) => $q->where('store_id', $request->store_id));
+        }
+
+        if ($request->user()->hasRole('staff')) {
+            $query->where('created_by_id', $request->user()->id);
+        }
+
+        if ($request->filled('category')) {
+            $query->whereHas('utility', fn($q) => $q->where('category', $request->category));
+        }
+
+        if ($request->filled('utility_id')) {
+            $query->where('utility_id', $request->utility_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $usages = $query->orderBy('id', 'desc')->paginate(20);
 
         return response()->json([
             'success' => true,
@@ -51,6 +72,7 @@ class UtilityUsageController extends Controller
         $usage->load([
             'utility.store:id,nickname',
             'utility.utilityProvider:id,name',
+            'utility.unit:id,unit',
             'createdBy:id,name',
             'approvedBy:id,name',
         ]);
@@ -66,6 +88,7 @@ class UtilityUsageController extends Controller
         $utilityUsage->load([
             'utility.store:id,nickname',
             'utility.utilityProvider:id,name',
+            'utility.unit:id,unit',
             'createdBy:id,name',
             'approvedBy:id,name',
         ]);
@@ -93,6 +116,7 @@ class UtilityUsageController extends Controller
         $utilityUsage->load([
             'utility.store:id,nickname',
             'utility.utilityProvider:id,name',
+            'utility.unit:id,unit',
             'createdBy:id,name',
             'approvedBy:id,name',
         ]);
@@ -110,6 +134,25 @@ class UtilityUsageController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Data berhasil dihapus.',
+        ]);
+    }
+
+    /**
+     * Check if store has pending utility reports (status = 1 - Belum Diperiksa)
+     * Used for check-out validation
+     */
+    public function checkPendingReports(Request $request, $storeId)
+    {
+        $pendingCount = UtilityUsage::whereHas('utility', fn($q) => $q->where('store_id', $storeId))
+            ->where('status', UtilityUsage::STATUS_BELUM_DIPERIKSA)
+            ->count();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'has_pending' => $pendingCount > 0,
+                'pending_count' => $pendingCount,
+            ],
         ]);
     }
 }

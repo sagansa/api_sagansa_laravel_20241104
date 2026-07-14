@@ -22,6 +22,11 @@ class Utility extends Model
         return $this->belongsTo(UtilityProvider::class);
     }
 
+    public function unit(): BelongsTo
+    {
+        return $this->belongsTo(Unit::class);
+    }
+
     public function utilityUsages()
     {
         return $this->hasMany(UtilityUsage::class);
