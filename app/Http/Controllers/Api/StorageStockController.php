@@ -161,7 +161,7 @@ class StorageStockController extends Controller
      */
     public function todayStatus(Request $request)
     {
-        $today = Carbon::now()->toDateString();
+        $today = Carbon::now('Asia/Jakarta')->toDateString();
 
         $totalStores = \App\Models\Store::where('status', '<>', '8')->count();
         $reportedStores = RemainingStorage::where('for', 'remaining_storage')
@@ -170,7 +170,7 @@ class StorageStockController extends Controller
             ->count('store_id');
 
         $userStoreReported = false;
-        if ($request->user()->hasRole('storage-staff')) {
+        if ($request->user()->hasRole('storage-staff') || $request->user()->hasRole('admin')) {
             $presence = \App\Models\Presence::where('created_by_id', $request->user()->id)
                 ->whereDate('check_in', $today)
                 ->first();
