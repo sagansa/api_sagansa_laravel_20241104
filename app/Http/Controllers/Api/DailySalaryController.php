@@ -64,6 +64,7 @@ class DailySalaryController extends Controller
 
     /**
      * Get employees who have daily salary records
+     * Only show users with role 'staff' or 'former employee'
      */
     public function employees()
     {
@@ -81,6 +82,9 @@ class DailySalaryController extends Controller
         }
 
         $employees = User::whereIn('id', $userIds)
+            ->whereHas('roles', function ($query) {
+                $query->whereIn('name', ['staff', 'former employee']);
+            })
             ->orderBy('name')
             ->get(['id', 'name']);
 
