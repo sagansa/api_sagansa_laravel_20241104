@@ -106,6 +106,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\Api\SalaryController::class, 'show']);
     });
 
+    Route::prefix('daily-salaries')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\DailySalaryController::class, 'index']);
+        Route::get('/employees', [\App\Http\Controllers\Api\DailySalaryController::class, 'employees']);
+        Route::get('/for-payment', [\App\Http\Controllers\Api\DailySalaryController::class, 'forPayment']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\DailySalaryController::class, 'show']);
+    });
+
     Route::prefix('procurement')->group(function () {
         Route::get('/products', [\App\Http\Controllers\Api\ProcurementController::class, 'products']);
         Route::get('/requests', [\App\Http\Controllers\Api\ProcurementController::class, 'index']);
