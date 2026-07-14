@@ -35,6 +35,11 @@ class DailySalaryController extends Controller
             $query->where('status', $request->status);
         }
 
+        // Filter by payment type (1 = Transfer, 2 = Tunai)
+        if ($request->has('payment_type_id')) {
+            $query->where('payment_type_id', $request->payment_type_id);
+        }
+
         // Filter by date range
         if ($request->has('date_from')) {
             $query->where('date', '>=', $request->date_from);
@@ -112,6 +117,36 @@ class DailySalaryController extends Controller
         return response()->json([
             'success' => true,
             'data' => $dailySalary,
+        ]);
+    }
+
+    /**
+     * Bulk update status for daily salaries (admin only)
+     */
+    public function bulkUpdateStatus(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user->hasRole('admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized. Only admin can perform bulk updates.',
+            ], 403);
+        }
+
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'exists:daily_salaries,id',
+            'status' => 'required|in:1,2,3,4',
+        ]);
+
+        $updated = DailySalary::whereIn('id', $request->ids)
+            ->update(['status' => $request->status]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "$updated daily salary(s) updated successfully.",
+            'data' => ['updated_count' => $updated],
         ]);
     }
 }
