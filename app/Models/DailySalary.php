@@ -57,4 +57,9 @@ class DailySalary extends Model
     {
         return $this->belongsToMany(ClosingStore::class);
     }
+
+    public function paymentReceipts()
+    {
+        return $this->belongsToMany(PaymentReceipt::class);
+    }
 }

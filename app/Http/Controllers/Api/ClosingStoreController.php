@@ -310,32 +310,65 @@ class ClosingStoreController extends Controller
 
     /**
      * Get list of fuel services for the active store of today's presence check-in.
+     * Admin sees all, staff sees only their own store and their own records.
      */
     public function indexFuelServices(Request $request)
     {
+        $user = $request->user();
         $today = Carbon::now()->toDateString();
-        $presence = Presence::where('created_by_id', $request->user()->id)
-            ->whereDate('check_in', $today)
-            ->first();
-            
+
         $query = FuelService::query()->with(['vehicle', 'supplier', 'createdBy']);
-        
-        if ($presence) {
-            $query->where('store_id', $presence->store_id);
+
+        if ($user->hasRole('staff')) {
+            // Staff: filter by their store from presence and only their own records
+            $presence = Presence::where('created_by_id', $user->id)
+                ->whereDate('check_in', $today)
+                ->first();
+
+            if ($presence) {
+                $query->where('store_id', $presence->store_id);
+            }
+            $query->where('created_by_id', $user->id);
         }
-        
-        if ($request->user()->hasRole('staff')) {
-            $query->where('created_by_id', $request->user()->id);
-        }
-        
+        // Admin/super_admin: no store or user filter, see all
+
         $fuelServices = $query->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
             ->take(50)
             ->get();
-            
+
         return response()->json([
             'success' => true,
             'data' => $fuelServices
+        ]);
+    }
+
+    /**
+     * Get fuel services for payment receipt (transfer type, unpaid, not linked to payment receipt)
+     */
+    public function fuelServicesForPayment(Request $request)
+    {
+        $user = $request->user();
+        $query = FuelService::with(['vehicle', 'supplier', 'createdBy'])
+            ->where('payment_type_id', 1) // Transfer
+            ->where('status', 1) // Unpaid
+            ->whereDoesntHave('paymentReceipts');
+
+        // Staff sees only their own, admin sees all
+        if ($user->hasRole('staff')) {
+            $query->where('created_by_id', $user->id);
+        }
+
+        // Filter by user_id (admin only)
+        if ($request->has('created_by_id') && $user->hasRole('admin')) {
+            $query->where('created_by_id', $request->created_by_id);
+        }
+
+        $fuelServices = $query->orderBy('date', 'desc')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $fuelServices,
         ]);
     }
 

@@ -26,6 +26,16 @@ class PaymentReceipt extends Model
             ->distinct();
     }
 
+    public function fuelServices()
+    {
+        return $this->belongsToMany(FuelService::class);
+    }
+
+    public function dailySalaries()
+    {
+        return $this->belongsToMany(DailySalary::class);
+    }
+
     public function supplier()
     {
         return $this->belongsTo(Supplier::class);

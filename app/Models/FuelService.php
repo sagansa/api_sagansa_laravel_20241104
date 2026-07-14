@@ -41,6 +41,11 @@ class FuelService extends Model
         return $this->belongsToMany(ClosingStore::class);
     }
 
+    public function paymentReceipts()
+    {
+        return $this->belongsToMany(PaymentReceipt::class);
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by_id');
