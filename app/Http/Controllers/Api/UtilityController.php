@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Utility;
+use Illuminate\Http\Request;
 
 class UtilityController extends Controller
 {
