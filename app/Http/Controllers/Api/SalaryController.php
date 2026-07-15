@@ -13,7 +13,7 @@ class SalaryController extends Controller
 {
     /**
      * Get monthly salary history list.
-     * - Admin (role admin/super_admin): sees all records; supports ?user_id=, ?period=YYYY-MM, ?page= pagination.
+     * - Admin (role admin): sees all records; supports ?user_id=, ?period=YYYY-MM, ?status=, ?page= pagination.
      * - Non-admin: only their own records (legacy behavior).
      *
      * Non-breaking: when no `page` param is sent, returns {success, data:[...]} (no meta)
@@ -22,10 +22,17 @@ class SalaryController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin');
+        $isAdmin = $user->hasRole('admin');
 
         $query = MonthlySalary::with('user')
-            ->where('status', '>=', MonthlySalary::STATUS_APPROVED)
+            ->when(!$isAdmin, fn($q) => $q->where('status', '>=', MonthlySalary::STATUS_APPROVED))
+            ->when($isAdmin && $request->filled('status'), function ($q) use ($request) {
+                $map = ['draft' => 1, 'processing' => 2, 'paid' => 3];
+                $val = $map[$request->input('status')] ?? null;
+                if ($val !== null) {
+                    $q->where('status', $val);
+                }
+            })
             ->orderBy('period_start', 'desc');
 
         // The admin "view all" path is opt-in via the `page` param. The legacy
@@ -52,7 +59,7 @@ class SalaryController extends Controller
         }
 
         $formatItem = function (MonthlySalary $salary) {
-            $statusText = 'pending';
+            $statusText = 'draft';
             if ($salary->status === MonthlySalary::STATUS_PAID) {
                 $statusText = 'paid';
             } elseif ($salary->status === MonthlySalary::STATUS_APPROVED) {
@@ -107,7 +114,7 @@ class SalaryController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
-        $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin');
+        $isAdmin = $user->hasRole('admin');
 
         $query = MonthlySalary::with(['presences.shiftStore', 'presences.store', 'user']);
 

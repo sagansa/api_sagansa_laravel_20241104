@@ -105,6 +105,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\SalaryController::class, 'index']);
         Route::get('/employees', [\App\Http\Controllers\Api\SalaryController::class, 'employees']);
         Route::get('/{id}', [\App\Http\Controllers\Api\SalaryController::class, 'show']);
+        // --- admin write operations ---
+        Route::middleware('admin')->group(function () {
+            Route::post('/generate', [\App\Http\Controllers\Api\SalaryAdminController::class, 'generate']);
+            Route::post('/approve', [\App\Http\Controllers\Api\SalaryAdminController::class, 'bulkApprove']);
+            Route::post('/{id}/approve', [\App\Http\Controllers\Api\SalaryAdminController::class, 'approve']);
+            Route::post('/{id}/pay', [\App\Http\Controllers\Api\SalaryAdminController::class, 'pay']);
+            Route::get('/{id}/payment-info', [\App\Http\Controllers\Api\SalaryAdminController::class, 'paymentInfo']);
+        });
     });
 
     Route::prefix('daily-salaries')->group(function () {
