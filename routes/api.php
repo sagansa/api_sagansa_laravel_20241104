@@ -167,7 +167,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'show']);
         Route::post('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'update']);
         Route::delete('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'destroy']);
-        Route::get('/store/{storeId}/pending', [\App\Http\Controllers\Api\UtilityUsageController::class, 'checkPendingReports']);
     });
 
     Route::prefix('readiness')->group(function () {

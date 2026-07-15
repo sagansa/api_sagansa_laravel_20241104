@@ -137,22 +137,4 @@ class UtilityUsageController extends Controller
         ]);
     }
 
-    /**
-     * Check if store has pending utility reports (status = 1 - Belum Diperiksa)
-     * Used for check-out validation
-     */
-    public function checkPendingReports(Request $request, $storeId)
-    {
-        $pendingCount = UtilityUsage::whereHas('utility', fn($q) => $q->where('store_id', $storeId))
-            ->where('status', UtilityUsage::STATUS_BELUM_DIPERIKSA)
-            ->count();
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'has_pending' => $pendingCount > 0,
-                'pending_count' => $pendingCount,
-            ],
-        ]);
-    }
 }
