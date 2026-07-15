@@ -583,24 +583,21 @@ class PresenceController extends Controller
     }
 
     /**
-     * Get all employees' presence data for today (admin only).
+     * Get all employees' presence data for today.
+     * Admin/super_admin gets all presences.
+     * Regular users get only their own presence data.
      */
     public function getAllTodayPresences(Request $request)
     {
         $user = $request->user();
-
-        // Only admin can access this endpoint
-        if (!$user->hasRole('admin') && !$user->hasRole('super_admin')) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized'
-            ], 403);
-        }
-
+        $presenceUserId = $this->resolvePresenceUserId($user);
         $today = Carbon::today()->toDateString();
 
         $presences = Presence::with(['createdBy', 'store', 'shiftStore'])
             ->whereDate('check_in', $today)
+            ->when(!$user->hasRole('admin') && !$user->hasRole('super_admin'), function ($query) use ($presenceUserId) {
+                $query->where('created_by_id', $presenceUserId);
+            })
             ->orderBy('check_in', 'desc')
             ->get();
 

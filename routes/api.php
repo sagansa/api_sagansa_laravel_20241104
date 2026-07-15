@@ -71,8 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users', function (\Illuminate\Http\Request $request) {
         return response()->json([
             'success' => true,
-            'data' => \App\Models\User::where('status', '1')
-                ->orderBy('name')
+            'data' => \App\Models\User::orderBy('name')
                 ->get(['id', 'name'])
         ]);
     });
