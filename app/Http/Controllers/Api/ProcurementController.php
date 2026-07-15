@@ -662,7 +662,7 @@ class ProcurementController extends Controller
             'transfer_amount' => 'required|numeric|min:1',
             'total_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string|max:500',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp,heic,heif|max:5120',
+            'image' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -697,8 +697,8 @@ class ProcurementController extends Controller
             $firstInvoice = $invoices->first();
 
             $imagePath = null;
-            if ($request->hasFile('image')) {
-                $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image'), 'images/PaymentReceipt');
+            if ($request->filled('image')) {
+                $imagePath = $request->input('image');
             }
 
             $receipt = PaymentReceipt::create([
