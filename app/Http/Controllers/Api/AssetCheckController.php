@@ -105,7 +105,7 @@ class AssetCheckController extends Controller
             'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
             'photos' => 'nullable|array',
-            'photos.*' => 'image|max:4096',
+            'photos.*' => 'string',
             'checklist' => 'nullable|array',
             'checklist.*.label' => 'required_with:checklist|string|max:255',
             'checklist.*.value' => 'required_with:checklist|integer|in:0,1',
@@ -154,9 +154,9 @@ class AssetCheckController extends Controller
 
         // Upload foto-foto.
         $photoPaths = [];
-        if ($request->hasFile('photos')) {
-            foreach ($request->file('photos') as $file) {
-                $photoPaths[] = app(\App\Contracts\ImageStorageContract::class)->upload($file, 'assets/checks');
+        if ($request->filled('photos')) {
+            foreach ($request->input('photos') as $path) {
+                $photoPaths[] = $path;
             }
         }
 
@@ -232,7 +232,7 @@ class AssetCheckController extends Controller
         } catch (\Throwable $e) {
             // Bersihkan foto yang sudah di-upload bila transaksi gagal.
             foreach ($photoPaths as $path) {
-                Storage::disk('public')->delete($path);
+                app(\App\Contracts\ImageStorageContract::class)->delete($path);
             }
             throw $e;
         }
