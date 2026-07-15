@@ -86,11 +86,19 @@ class AssetController extends Controller
             });
         }
 
-        $assets = $query->orderBy('next_check_at', 'asc')->orderBy('id', 'desc')->get();
+        $perPage = $request->integer('per_page', 20);
+        $assets = $query->orderBy('next_check_at', 'asc')->orderBy('id', 'desc')
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $assets,
+            'data' => $assets->items(),
+            'pagination' => [
+                'current_page' => $assets->currentPage(),
+                'last_page' => $assets->lastPage(),
+                'per_page' => $assets->perPage(),
+                'total' => $assets->total(),
+            ],
         ]);
     }
 

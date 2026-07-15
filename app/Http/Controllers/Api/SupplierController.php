@@ -44,11 +44,18 @@ class SupplierController extends Controller
             $query->where('status', $request->status);
         }
 
-        $suppliers = $query->orderBy('id', 'desc')->get();
+        $perPage = $request->integer('per_page', 20);
+        $suppliers = $query->orderBy('id', 'desc')->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $suppliers
+            'data' => $suppliers->items(),
+            'pagination' => [
+                'current_page' => $suppliers->currentPage(),
+                'last_page' => $suppliers->lastPage(),
+                'per_page' => $suppliers->perPage(),
+                'total' => $suppliers->total(),
+            ],
         ]);
     }
 

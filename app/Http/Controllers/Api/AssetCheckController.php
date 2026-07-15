@@ -55,11 +55,19 @@ class AssetCheckController extends Controller
             $query->where('severity', $request->severity);
         }
 
-        $checks = $query->orderBy('check_date', 'desc')->orderBy('id', 'desc')->get();
+        $perPage = $request->integer('per_page', 20);
+        $checks = $query->orderBy('check_date', 'desc')->orderBy('id', 'desc')
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $checks,
+            'data' => $checks->items(),
+            'pagination' => [
+                'current_page' => $checks->currentPage(),
+                'last_page' => $checks->lastPage(),
+                'per_page' => $checks->perPage(),
+                'total' => $checks->total(),
+            ],
         ]);
     }
 

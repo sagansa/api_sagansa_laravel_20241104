@@ -56,32 +56,33 @@ class LeaveController extends Controller
         // TODO: Trigger notifikasi ke karyawan
         return response()->json(['status' => 'success', 'message' => 'Cuti ditolak', 'data' => $this->formatLeave($leave)]);
     }
-    public function index()
+    public function index(Request $request)
     {
         $user = Auth::user();
+        $perPage = $request->integer('per_page', 20);
 
-        // Jika user adalah admin, ambil semua data leave
-        if ($user->hasRole('admin')) {
-            $leaves = PermitEmployee::with(['createdBy', 'approvedBy'])
-                ->orderBy('from_date', 'desc')
-                ->get()
-                ->map(function ($leave) {
-                    return $this->formatLeave($leave);
-                });
-        } else {
-            // Jika user bukan admin, hanya ambil data leave milik user tersebut
-            $leaves = PermitEmployee::with(['createdBy', 'approvedBy'])
-                ->where('created_by_id', $user->id)
-                ->orderBy('from_date', 'desc')
-                ->get()
-                ->map(function ($leave) {
-                    return $this->formatLeave($leave);
-                });
+        $query = PermitEmployee::with(['createdBy', 'approvedBy'])
+            ->orderBy('from_date', 'desc');
+
+        if (!$user->hasRole('admin')) {
+            $query->where('created_by_id', $user->id);
         }
+
+        $leaves = $query->paginate($perPage);
+
+        $data = collect($leaves->items())->map(function ($leave) {
+            return $this->formatLeave($leave);
+        });
 
         return response()->json([
             'status' => 'success',
-            'data' => $leaves
+            'data' => $data,
+            'pagination' => [
+                'current_page' => $leaves->currentPage(),
+                'last_page' => $leaves->lastPage(),
+                'per_page' => $leaves->perPage(),
+                'total' => $leaves->total(),
+            ],
         ]);
     }
 

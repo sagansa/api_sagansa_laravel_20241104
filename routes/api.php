@@ -69,10 +69,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/shift-stores', [PresenceController::class, 'getShiftStores']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/users', function (\Illuminate\Http\Request $request) {
+        $query = \App\Models\User::orderBy('name');
+        $role = $request->query('role');
+        if ($role) {
+            $query->role($role);
+        }
         return response()->json([
             'success' => true,
-            'data' => \App\Models\User::orderBy('name')
-                ->get(['id', 'name'])
+            'data' => $query->get(['id', 'name'])
         ]);
     });
 

@@ -42,7 +42,9 @@ class ProcurementController extends Controller
             $query->where('user_id', $request->user()->id);
         }
 
-        $requests = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
+        $perPage = $request->integer('per_page', 20);
+        $paginated = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->paginate($perPage);
+        $requests = $paginated->items();
 
         // Hitung statistik invoice untuk user/admin
         $userId = $request->user()->id;
@@ -64,7 +66,13 @@ class ProcurementController extends Controller
             'data' => $requests,
             'meta' => [
                 'invoice_counts' => $invoicesCount
-            ]
+            ],
+            'pagination' => [
+                'current_page' => $paginated->currentPage(),
+                'last_page' => $paginated->lastPage(),
+                'per_page' => $paginated->perPage(),
+                'total' => $paginated->total(),
+            ],
         ]);
     }
 

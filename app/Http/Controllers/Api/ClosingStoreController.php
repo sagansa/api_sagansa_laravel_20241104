@@ -33,11 +33,18 @@ class ClosingStoreController extends Controller
             $query->where('created_by_id', $user->id);
         }
 
-        $list = $query->get();
+        $perPage = $request->integer('per_page', 20);
+        $list = $query->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $list
+            'data' => $list->items(),
+            'pagination' => [
+                'current_page' => $list->currentPage(),
+                'last_page' => $list->lastPage(),
+                'per_page' => $list->perPage(),
+                'total' => $list->total(),
+            ],
         ]);
     }
 
@@ -367,14 +374,20 @@ class ClosingStoreController extends Controller
         }
         // Admin/super_admin: no store or user filter, see all
 
+        $perPage = $request->integer('per_page', 20);
         $fuelServices = $query->orderBy('date', 'desc')
             ->orderBy('created_at', 'desc')
-            ->take(50)
-            ->get();
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $fuelServices
+            'data' => $fuelServices->items(),
+            'pagination' => [
+                'current_page' => $fuelServices->currentPage(),
+                'last_page' => $fuelServices->lastPage(),
+                'per_page' => $fuelServices->perPage(),
+                'total' => $fuelServices->total(),
+            ],
         ]);
     }
 

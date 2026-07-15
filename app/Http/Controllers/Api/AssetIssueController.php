@@ -53,13 +53,20 @@ class AssetIssueController extends Controller
             $query->whereHas('asset', fn($q) => $q->where('store_id', $request->store_id));
         }
 
+        $perPage = $request->integer('per_page', 20);
         $issues = $query->orderByRaw('status = ' . AssetIssue::STATUS_OPEN . ' DESC')
             ->orderBy('id', 'desc')
-            ->get();
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $issues,
+            'data' => $issues->items(),
+            'pagination' => [
+                'current_page' => $issues->currentPage(),
+                'last_page' => $issues->lastPage(),
+                'per_page' => $issues->perPage(),
+                'total' => $issues->total(),
+            ],
         ]);
     }
 
