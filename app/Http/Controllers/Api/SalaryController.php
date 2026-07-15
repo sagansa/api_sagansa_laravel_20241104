@@ -28,13 +28,16 @@ class SalaryController extends Controller
             ->where('status', '>=', MonthlySalary::STATUS_APPROVED)
             ->orderBy('period_start', 'desc');
 
-        // Non-admin: only own records
-        if (!$isAdmin) {
-            $query->where('user_id', $user->id);
-        }
+        // The admin "view all" path is opt-in via the `page` param. The legacy
+        // (no-page) callers (home/HRD/loan dashboards) expect the user's OWN
+        // records to render personal indicators, so scope them to own even for
+        // admins to avoid showing other employees' data on personal dashboards.
+        $wantsAdminList = $isAdmin && $request->has('page');
 
-        // Admin optional filter: specific employee
-        if ($request->filled('user_id') && $isAdmin) {
+        if (!$wantsAdminList) {
+            $query->where('user_id', $user->id);
+        } elseif ($request->filled('user_id')) {
+            // Admin list filtered to a specific employee
             $query->where('user_id', $request->input('user_id'));
         }
 
