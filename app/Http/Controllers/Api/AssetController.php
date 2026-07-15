@@ -271,7 +271,7 @@ class AssetController extends Controller
             'purchase_date' => 'nullable|date',
             'next_check_at' => 'nullable|date',
             'notes' => 'nullable|string',
-            'photo' => 'nullable|image|max:4096',
+            'photo' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -294,8 +294,8 @@ class AssetController extends Controller
             $data['next_check_at'] = $category ? $category->computeNextCheckAt() : Carbon::now()->addDays(30);
         }
 
-        if ($request->hasFile('photo')) {
-            $data['photo'] = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('photo'), 'assets/photos');
+        if ($request->filled('photo')) {
+            $data['photo'] = $request->input('photo');
         }
 
         $asset = Asset::create($data);
@@ -330,7 +330,7 @@ class AssetController extends Controller
             'purchase_date' => 'nullable|date',
             'next_check_at' => 'nullable|date',
             'notes' => 'nullable|string',
-            'photo' => 'nullable|image|max:4096',
+            'photo' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -343,11 +343,11 @@ class AssetController extends Controller
 
         $data = $validator->safe()->except(['photo']);
 
-        if ($request->hasFile('photo')) {
-            if ($asset->photo) {
+        if ($request->filled('photo')) {
+            if ($asset->photo && $asset->photo !== $request->input('photo')) {
                 app(\App\Contracts\ImageStorageContract::class)->delete($asset->photo);
             }
-            $data['photo'] = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('photo'), 'assets/photos');
+            $data['photo'] = $request->input('photo');
         }
 
         $asset->update($data);
