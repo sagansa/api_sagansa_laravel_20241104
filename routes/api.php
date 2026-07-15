@@ -103,6 +103,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('salaries')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\SalaryController::class, 'index']);
+        Route::get('/employees', [\App\Http\Controllers\Api\SalaryController::class, 'employees']);
         Route::get('/{id}', [\App\Http\Controllers\Api\SalaryController::class, 'show']);
     });
 

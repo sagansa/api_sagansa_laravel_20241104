@@ -5,27 +5,50 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\MonthlySalary;
 use App\Models\DailySalary;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
 class SalaryController extends Controller
 {
     /**
-     * Get monthly salary history list for the authenticated user
+     * Get monthly salary history list.
+     * - Admin (role admin/super_admin): sees all records; supports ?user_id=, ?period=YYYY-MM, ?page= pagination.
+     * - Non-admin: only their own records (legacy behavior).
+     *
+     * Non-breaking: when no `page` param is sent, returns {success, data:[...]} (no meta)
+     * to preserve compatibility with existing callers.
      */
     public function index(Request $request)
     {
-        $userId = $request->user()->id;
+        $user = $request->user();
+        $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin');
 
-        $salaries = MonthlySalary::where('user_id', $userId)
-            ->where('status', '>=', MonthlySalary::STATUS_APPROVED) // Only show approved/paid
-            ->orderBy('period_start', 'desc')
-            ->get();
+        $query = MonthlySalary::with('user')
+            ->where('status', '>=', MonthlySalary::STATUS_APPROVED)
+            ->orderBy('period_start', 'desc');
 
-        $formatted = $salaries->map(function (MonthlySalary $salary) {
-            $periodLabel = Carbon::parse($salary->period_start)->translatedFormat('F Y');
-            
-            // Map status
+        // Non-admin: only own records
+        if (!$isAdmin) {
+            $query->where('user_id', $user->id);
+        }
+
+        // Admin optional filter: specific employee
+        if ($request->filled('user_id') && $isAdmin) {
+            $query->where('user_id', $request->input('user_id'));
+        }
+
+        // Optional filter: period YYYY-MM (applies to both, harmless for non-admin)
+        if ($request->filled('period')) {
+            $period = $request->input('period'); // e.g. "2026-07"
+            $parts = explode('-', $period);
+            if (count($parts) === 2) {
+                $query->whereYear('period_start', (int) $parts[0])
+                      ->whereMonth('period_start', (int) $parts[1]);
+            }
+        }
+
+        $formatItem = function (MonthlySalary $salary) {
             $statusText = 'pending';
             if ($salary->status === MonthlySalary::STATUS_PAID) {
                 $statusText = 'paid';
@@ -34,24 +57,44 @@ class SalaryController extends Controller
             }
 
             $deductions = $salary->deductions ?? [];
-            $hasLoan = isset($deductions['loan_installments']) && (int)$deductions['loan_installments'] > 0;
+            $hasLoan = isset($deductions['loan_installments']) && (int) $deductions['loan_installments'] > 0;
 
             return [
                 'id' => $salary->id,
                 'period' => $salary->period_start->toDateString(),
-                'period_label' => $periodLabel,
+                'period_label' => Carbon::parse($salary->period_start)->translatedFormat('F Y'),
                 'amount' => (int) $salary->total_salary,
                 'daily_salary_total' => (int) ($salary->daily_salary_total ?? 0),
                 'paid_amount' => $salary->paid_amount !== null ? (int) $salary->paid_amount : null,
                 'status' => $statusText,
                 'paymentDate' => $salary->payment_date ? $salary->payment_date->toDateString() : null,
                 'has_loan' => $hasLoan,
+                'user_id' => $salary->user_id,
+                'user_name' => $salary->user?->name,
             ];
-        });
+        };
 
+        // Paginated response (admin list with page param)
+        if ($request->has('page')) {
+            $paged = $query->paginate($request->integer('per_page', 20));
+            $data = $paged->getCollection()->map($formatItem)->values();
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'meta' => [
+                    'current_page' => $paged->currentPage(),
+                    'last_page' => $paged->lastPage(),
+                    'per_page' => $paged->perPage(),
+                    'total' => $paged->total(),
+                ],
+            ]);
+        }
+
+        // Legacy response (no page param): full list, no meta
+        $formatted = $query->get()->map($formatItem)->values();
         return response()->json([
             'success' => true,
-            'data' => $formatted
+            'data' => $formatted,
         ]);
     }
 
@@ -60,11 +103,17 @@ class SalaryController extends Controller
      */
     public function show(Request $request, $id)
     {
-        $userId = $request->user()->id;
+        $user = $request->user();
+        $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin');
 
-        $salary = MonthlySalary::where('user_id', $userId)
-            ->with(['presences.shiftStore', 'presences.store'])
-            ->findOrFail($id);
+        $query = MonthlySalary::with(['presences.shiftStore', 'presences.store', 'user']);
+
+        // Non-admin: only own records
+        if (!$isAdmin) {
+            $query->where('user_id', $user->id);
+        }
+
+        $salary = $query->findOrFail($id);
 
         $periodLabel = Carbon::parse($salary->period_start)->translatedFormat('F Y');
 
@@ -122,6 +171,8 @@ class SalaryController extends Controller
             'success' => true,
             'data' => [
                 'id' => $salary->id,
+                'user_id' => $salary->user_id,
+                'user_name' => $salary->user?->name,
                 'period' => $salary->period_start->toDateString(),
                 'period_label' => $periodLabel,
                 'amount' => (int) $salary->total_salary,
@@ -138,6 +189,37 @@ class SalaryController extends Controller
                 'paymentDate' => $salary->payment_date ? $salary->payment_date->toDateString() : null,
                 'daily_work' => $dailyWork
             ]
+        ]);
+    }
+
+    /**
+     * Get employees who have monthly salary records (admin filter helper).
+     * Mirrors DailySalaryController::employees().
+     */
+    public function employees()
+    {
+        $userIds = MonthlySalary::distinct()
+            ->whereNotNull('user_id')
+            ->pluck('user_id')
+            ->toArray();
+
+        if (empty($userIds)) {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+            ]);
+        }
+
+        $employees = User::whereIn('id', $userIds)
+            ->whereHas('roles', function ($query) {
+                $query->whereIn('name', ['staff', 'former-employee']);
+            })
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $employees,
         ]);
     }
 }
