@@ -253,7 +253,7 @@ class SalesOrderController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'receipt_no' => 'required|string',
-            'image_delivery' => 'required_if:delivery_status,3|image|max:5120', // max 5MB (required only if status is 3)
+            'image_delivery' => 'required_if:delivery_status,3|string', // required only if status is 3
             'received_by' => 'nullable|string|max:255',
             'delivery_status' => 'nullable|in:3,6',
             'notes' => 'nullable|string',
@@ -292,11 +292,11 @@ class SalesOrderController extends Controller
 
         // Handle image upload
         $imagePath = null;
-        if ($request->hasFile('image_delivery')) {
-            if ($order->image_delivery) {
+        if ($request->filled('image_delivery')) {
+            if ($order->image_delivery && $order->image_delivery !== $request->input('image_delivery')) {
                 app(\App\Contracts\ImageStorageContract::class)->delete($order->image_delivery);
             }
-            $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image_delivery'), 'images/Online/Delivery');
+            $imagePath = $request->input('image_delivery');
         }
 
         $deliveryStatus = (int) $request->input('delivery_status', 3);
@@ -452,7 +452,7 @@ class SalesOrderController extends Controller
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.unit_price' => 'required|integer|min:0',
-            'image_payment' => 'nullable|image|mimes:jpeg,png,jpg,webp,heic,heif|max:5120',
+            'image_payment' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -490,9 +490,8 @@ class SalesOrderController extends Controller
         try {
             // Upload image_payment (jika ada) via ImageStorageContract
             $imagePaymentPath = null;
-            if ($request->hasFile('image_payment')) {
-                $imagePaymentPath = app(ImageStorageContract::class)
-                    ->upload($request->file('image_payment'), 'images/Online/Payment');
+            if ($request->filled('image_payment')) {
+                $imagePaymentPath = $request->input('image_payment');
             }
 
             $order = SalesOrderOnline::create([
