@@ -395,9 +395,9 @@ class ClosingStoreController extends Controller
             'amount' => 'required|numeric',
             'notes' => 'nullable|string',
             'service_details' => 'nullable|array',
-            'image' => 'required|image|max:10240', // Max 10MB
+            'image' => 'required|string',
         ]);
-        
+
         $closingStoreId = $request->input('closing_store_id');
         $storeId = null;
         
@@ -420,11 +420,8 @@ class ClosingStoreController extends Controller
         }
 
         $imagePath = null;
-        if ($request->hasFile('image')) {
-            $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload(
-                $request->file('image'),
-                'images/FuelService'
-            );
+        if ($request->filled('image')) {
+            $imagePath = $request->input('image');
         }
         
         $fuelService = FuelService::create([
