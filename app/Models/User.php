@@ -55,6 +55,11 @@ class User extends Authenticatable
         return $this->belongsTo(Company::class);
     }
 
+    public function applicantDetail()
+    {
+        return $this->hasOne(ApplicantDetail::class);
+    }
+
     public function stores()
     {
         return $this->hasMany(Store::class);
