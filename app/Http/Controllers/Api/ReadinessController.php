@@ -50,9 +50,9 @@ class ReadinessController extends Controller
         }
 
         $request->validate([
-            'image_selfie' => 'required|image|mimes:jpeg,png,jpg,webp,heic,heif',
-            'left_hand' => 'required|image|mimes:jpeg,png,jpg,webp,heic,heif',
-            'right_hand' => 'required|image|mimes:jpeg,png,jpg,webp,heic,heif',
+            'image_selfie' => 'required|string',
+            'left_hand' => 'required|string',
+            'right_hand' => 'required|string',
         ]);
 
         $imageSelfiePath = null;
@@ -60,9 +60,9 @@ class ReadinessController extends Controller
         $rightHandPath = null;
 
         try {
-            $imageSelfiePath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image_selfie'), 'images/Readiness');
-            $leftHandPath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('left_hand'), 'images/Readiness');
-            $rightHandPath = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('right_hand'), 'images/Readiness');
+            $imageSelfiePath = $request->input('image_selfie');
+            $leftHandPath = $request->input('left_hand');
+            $rightHandPath = $request->input('right_hand');
 
             $readiness = Readiness::create([
                 'created_by_id' => $userId,
