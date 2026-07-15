@@ -155,20 +155,27 @@ class SalaryService
             ->get();
         $loanInstallmentTotal = $loanInstallments->sum('amount');
 
-        // Ambil gaji harian dalam periode gaji berjalan
-        // Mencakup: (1) input langsung oleh karyawan, (2) input oleh admin/operator tapi terhubung ke presensi karyawan
-        // Hanya yang berstatus sudah dibayar (2) atau siap dibayar (3) yang dijumlahkan
-        // ke total gaji harian. Yang belum dibayar (1) / perbaiki (4) diabaikan sampai
-        // statusnya diperbarui.
+        // Ambil SEMUA gaji harian dalam periode gaji berjalan agar tetap ter-link
+        // ke slip (untuk tracking). Mencakup: (1) input langsung oleh karyawan,
+        // (2) input oleh admin/operator tapi terhubung ke presensi karyawan.
+        //
+        // Catatan: filter status (hanya 2=sudah dibayar / 3=siap dibayar) untuk
+        // perhitungan TOTAL nominal dilakukan di accessor
+        // MonthlySalary::getDailySalaryTotalAttribute(), BUKAN di sini. Jadi bila
+        // status daily salary berubah, total slip otomatis menyesuaikan tanpa
+        // perlu regenerate.
         $dailySalaries = DailySalary::whereNull('monthly_salary_id')
             ->whereBetween('date', [$periodStart->toDateString(), $periodEnd->toDateString()])
-            ->whereIn('status', [2, 3])
             ->where(function ($q) use ($userId) {
                 $q->where('created_by_id', $userId)
                   ->orWhereHas('presence', fn ($pq) => $pq->where('created_by_id', $userId));
             })
             ->get();
-        $dailySalaryTotal = $dailySalaries->sum('amount');
+        // Hanya yang berstatus sudah dibayar (2) / siap dibayar (3) yang masuk
+        // hitungan total nominal gaji harian. Konsisten dengan accessor
+        // MonthlySalary::getDailySalaryTotalAttribute(). Semua status tetap
+        // ter-link (lihat query di atas), hanya nominal yang difilter.
+        $dailySalaryTotal = $dailySalaries->whereIn('status', [2, 3])->sum('amount');
 
         $deductions = [
             'late_penalties' => $totalPenaltyAmount,

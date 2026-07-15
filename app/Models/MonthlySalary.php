@@ -47,4 +47,36 @@ class MonthlySalary extends Model
             'presence_id'
         );
     }
+
+    public function dailySalaries()
+    {
+        return $this->hasMany(DailySalary::class, 'monthly_salary_id');
+    }
+
+    /**
+     * Total gaji harian dihitung on-the-fly berdasarkan tanggal periode slip
+     * (period_start s/d period_end), user pemilik slip, dan status daily salary.
+     *
+     * Hanya daily salary berstatus sudah dibayar (2) atau siap dibayar (3) yang
+     * dijumlahkan. Pendekatan berbasis tanggal (bukan link monthly_salary_id)
+     * dipakai karena link mudah ter-reset/hilang saat regenerate, sedangkan
+     * tanggal & status selalu reliable.
+     *
+     * Mengesampingkan nilai snapshot pada kolom `daily_salary_total`. Setiap kali
+     * status daily salary berubah, total slip otomatis menyesuaikan tanpa perlu
+     * regenerate.
+     */
+    public function getDailySalaryTotalAttribute($value)
+    {
+        return (float) DailySalary::whereBetween('date', [
+                $this->period_start,
+                $this->period_end,
+            ])
+            ->where(function ($q) {
+                $q->where('created_by_id', $this->user_id)
+                  ->orWhereHas('presence', fn ($pq) => $pq->where('created_by_id', $this->user_id));
+            })
+            ->whereIn('status', [2, 3])
+            ->sum('amount');
+    }
 }

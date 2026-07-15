@@ -153,7 +153,7 @@ class SalaryAdminController extends Controller
      */
     public function paymentInfo(Request $request, $id)
     {
-        $salary = MonthlySalary::findOrFail($id);
+        $salary = MonthlySalary::with(['user.applicantDetail'])->findOrFail($id);
         $detail = $salary->user?->applicantDetail;
 
         $deductions = $salary->deductions ?? [];
