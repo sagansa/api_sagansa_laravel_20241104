@@ -156,28 +156,43 @@ class SalaryController extends Controller
                 }
             }
 
-            // Calculate hours worked
-            $checkIn = Carbon::parse($presence->check_in);
-            $checkOut = $presence->check_out ? Carbon::parse($presence->check_out) : null;
-            
-            $workHours = 0.0;
-            if ($checkOut) {
-                // Carbon diffInMinutes bersifat bertanda (b - a); argumen tadinya terbalik
-                // sehingga workHours selalu minus. Gunakan checkIn->diffInMinutes(checkOut)
-                // + abs() sebagai pengaman bila ada kasus timezone/kebalikan.
-                $workHours = round(abs($checkIn->diffInMinutes($checkOut)) / 60, 2);
+            // Calculate hours worked.
+            // - Berdasarkan shift duration (floor agar integer, bukan actual elapsed time).
+            // - Lupa check-in ATAU check-out → separuh duration.
+            // - Penalti keterlambatan/pulang cepat (ceil per jam) dilaporkan terpisah
+            //   sebagai info; TIDAK mengurangi workHours.
+            $duration = (int) ($presence->shiftStore?->duration ?? 8);
+            $hasCheckIn = !is_null($presence->check_in);
+            $hasCheckOut = !is_null($presence->check_out);
+
+            if (!$hasCheckIn || !$hasCheckOut) {
+                // Lupa salah satu/duanya → separuh duration; penalti diabaikan.
+                $workHours = (int) floor($duration / 2);
+                $penaltyHours = 0;
+            } else {
+                $workHours = (int) floor($duration);
+                $penaltyHours = (int) $presence->calculateTotalPenalty();
             }
 
             // Determine status
             $status = 'normal';
-            if (is_null($presence->check_out)) {
+            if (!$hasCheckOut) {
                 $status = 'no_checkout';
+            } elseif (!$hasCheckIn) {
+                $status = 'no_checkin';
             }
 
+            // Date fallback: check_in lebih可靠; bila null pakai created_at agar
+            // Carbon::parse tidak throw.
+            $dateRef = $hasCheckIn
+                ? Carbon::parse($presence->check_in)
+                : Carbon::parse($presence->created_at);
+
             return [
-                'date' => $checkIn->toDateString(),
+                'date' => $dateRef->toDateString(),
                 'workHours' => $workHours,
-                'overtime' => 0.0, // default placeholder
+                'penaltyHours' => $penaltyHours,
+                'overtime' => 0, // default placeholder
                 'dailyWage' => $dailyWage,
                 'status' => $status,
                 'payment_status' => $paymentStatus

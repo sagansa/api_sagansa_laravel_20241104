@@ -297,11 +297,46 @@ class ClosingStoreController extends Controller
             }
         }
         
+        // Catat ID yang sebelumnya ter-attach (sebelum sync) untuk mendeteksi
+        // item yang di-uncheck/detach oleh user.
+        $previousDailySalaryIds = $closingStore->dailySalaries()->pluck('daily_salaries.id')->all();
+        $previousInvoicePurchaseIds = $closingStore->invoicePurchases()->pluck('invoice_purchases.id')->all();
+        $previousFuelServiceIds = $closingStore->fuelServices()->pluck('fuel_services.id')->all();
+
         // Sync relationships
-        $closingStore->fuelServices()->sync($request->input('fuel_service_ids', []));
-        $closingStore->dailySalaries()->sync($request->input('daily_salary_ids', []));
-        $closingStore->invoicePurchases()->sync($request->input('invoice_purchase_ids', []));
-        
+        $newDailySalaryIds = $request->input('daily_salary_ids', []);
+        $newInvoicePurchaseIds = $request->input('invoice_purchase_ids', []);
+        $newFuelServiceIds = $request->input('fuel_service_ids', []);
+
+        $closingStore->dailySalaries()->sync($newDailySalaryIds);
+        $closingStore->invoicePurchases()->sync($newInvoicePurchaseIds);
+        $closingStore->fuelServices()->sync($newFuelServiceIds);
+
+        // Tandai transaksi yang TER-ATTACH sebagai paid (status 2).
+        // Sebelumnya sync() hanya memperbarui pivot tanpa mengubah status, sehingga
+        // daily salary / invoice purchase / fuel service tetap unpaid (1) meski
+        // tunainya sudah masuk ke laporan closing store.
+        $closingStore->dailySalaries()->update(['status' => 2]);
+        $closingStore->invoicePurchases()->update(['payment_status' => 2]);
+        $closingStore->fuelServices()->update(['status' => 2]);
+
+        // Kembalikan item yang di-DETACH (di-uncheck user) ke unpaid (status 1),
+        // karena tunainya tidak masuk ke laporan closing store ini. Konsisten
+        // dengan DetachAction di admin (RelationManager).
+        $detachedDailySalaryIds = array_diff($previousDailySalaryIds, $newDailySalaryIds);
+        $detachedInvoicePurchaseIds = array_diff($previousInvoicePurchaseIds, $newInvoicePurchaseIds);
+        $detachedFuelServiceIds = array_diff($previousFuelServiceIds, $newFuelServiceIds);
+
+        if (!empty($detachedDailySalaryIds)) {
+            DailySalary::whereIn('id', $detachedDailySalaryIds)->update(['status' => 1]);
+        }
+        if (!empty($detachedInvoicePurchaseIds)) {
+            InvoicePurchase::whereIn('id', $detachedInvoicePurchaseIds)->update(['payment_status' => 1]);
+        }
+        if (!empty($detachedFuelServiceIds)) {
+            FuelService::whereIn('id', $detachedFuelServiceIds)->update(['status' => 1]);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Laporan Closing Store berhasil disimpan.'
