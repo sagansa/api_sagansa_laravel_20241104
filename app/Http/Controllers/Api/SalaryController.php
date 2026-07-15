@@ -131,8 +131,8 @@ class SalaryController extends Controller
 
         $periodLabel = Carbon::parse($salary->period_start)->translatedFormat('F Y');
 
-        // Map status
-        $statusText = 'pending';
+        // Map status (default DRAFT -> 'draft', konsisten dengan index())
+        $statusText = 'draft';
         if ($salary->status === MonthlySalary::STATUS_PAID) {
             $statusText = 'paid';
         } elseif ($salary->status === MonthlySalary::STATUS_APPROVED) {
