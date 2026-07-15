@@ -123,6 +123,7 @@ class HygieneController extends Controller
             'rooms.*.room_id' => 'required|exists:rooms,id',
             'rooms.*.condition' => 'nullable|integer|in:1,2,3',
             'rooms.*.notes' => 'nullable|string|max:500',
+            'rooms.*.image' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -142,14 +143,7 @@ class HygieneController extends Controller
         $uploadedRooms = [];
 
         foreach ($request->input('rooms', []) as $i => $roomData) {
-            $imagePath = null;
-
-            if ($request->hasFile("rooms.$i.image")) {
-                $imagePath = app(\App\Contracts\ImageStorageContract::class)->upload(
-                    $request->file("rooms.$i.image"),
-                    "images/Hygiene/{$hygiene->id}"
-                );
-            }
+            $imagePath = $roomData['image'] ?? null;
 
             $hygieneOfRoom = HygieneOfRoom::create([
                 'hygiene_id' => $hygiene->id,
