@@ -157,8 +157,12 @@ class SalaryService
 
         // Ambil gaji harian dalam periode gaji berjalan
         // Mencakup: (1) input langsung oleh karyawan, (2) input oleh admin/operator tapi terhubung ke presensi karyawan
+        // Hanya yang berstatus sudah dibayar (2) atau siap dibayar (3) yang dijumlahkan
+        // ke total gaji harian. Yang belum dibayar (1) / perbaiki (4) diabaikan sampai
+        // statusnya diperbarui.
         $dailySalaries = DailySalary::whereNull('monthly_salary_id')
             ->whereBetween('date', [$periodStart->toDateString(), $periodEnd->toDateString()])
+            ->whereIn('status', [2, 3])
             ->where(function ($q) use ($userId) {
                 $q->where('created_by_id', $userId)
                   ->orWhereHas('presence', fn ($pq) => $pq->where('created_by_id', $userId));
