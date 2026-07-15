@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Carbon\Carbon;
 
 class Presence extends Model
 {
@@ -56,5 +57,63 @@ class Presence extends Model
     public function scopeForEmployee($query, $userId)
     {
         return $query->where('created_by_id', $userId);
+    }
+
+    /**
+     * Hitung jam keterlambatan (max 2 jam). Null check-in = 2 jam.
+     * Di-port dari apps/admin/app/Models/Presence.php (Opsi A).
+     */
+    public function calculateLateHours()
+    {
+        if (is_null($this->check_in)) {
+            return 2;
+        }
+
+        $checkInTime = Carbon::parse($this->check_in)->format('H:i:s');
+        $shiftStartTime = Carbon::parse($this->shiftStore->shift_start_time)->format('H:i:s');
+
+        if (Carbon::parse($checkInTime)->lessThanOrEqualTo($shiftStartTime)) {
+            return 0;
+        }
+
+        $lateSeconds = Carbon::parse($shiftStartTime)->diffInSeconds($checkInTime);
+        $lateHours = ceil($lateSeconds / 3600);
+
+        return min($lateHours, 2);
+    }
+
+    /**
+     * Hitung penalti jam checkout cepat/null. Null check-out = 2 jam.
+     * Di-port dari apps/admin/app/Models/Presence.php (Opsi A).
+     */
+    public function calculateCheckOutPenalty()
+    {
+        if (is_null($this->check_out)) {
+            return 2;
+        }
+
+        $checkOutTime = Carbon::parse($this->check_out);
+        $shiftEndTime = Carbon::parse($this->shiftStore->shift_end_time);
+
+        if ($checkOutTime->lessThan($shiftEndTime) && $checkOutTime->isNextDay()) {
+            $shiftEndTime->addDay();
+        }
+
+        if ($shiftEndTime->greaterThanOrEqualTo($checkOutTime)) {
+            return 0;
+        }
+
+        $penaltySeconds = $shiftEndTime->diffInSeconds($checkOutTime);
+        $penaltyHours = ceil($penaltySeconds / 3600);
+
+        return $penaltyHours;
+    }
+
+    /**
+     * Total penalti jam = late + checkout.
+     */
+    public function calculateTotalPenalty()
+    {
+        return $this->calculateLateHours() + $this->calculateCheckOutPenalty();
     }
 }
