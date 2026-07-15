@@ -162,7 +162,10 @@ class SalaryController extends Controller
             
             $workHours = 0.0;
             if ($checkOut) {
-                $workHours = round($checkOut->diffInMinutes($checkIn) / 60, 2);
+                // Carbon diffInMinutes bersifat bertanda (b - a); argumen tadinya terbalik
+                // sehingga workHours selalu minus. Gunakan checkIn->diffInMinutes(checkOut)
+                // + abs() sebagai pengaman bila ada kasus timezone/kebalikan.
+                $workHours = round(abs($checkIn->diffInMinutes($checkOut)) / 60, 2);
             }
 
             // Determine status
