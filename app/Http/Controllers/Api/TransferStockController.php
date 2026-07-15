@@ -58,15 +58,23 @@ class TransferStockController extends Controller
             });
         }
 
-        $transfers = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
+        $perPage = $request->integer('per_page', 20);
+        $transfers = $query->orderBy('date', 'desc')->orderBy('id', 'desc')
+            ->paginate($perPage);
 
-        $data = $transfers->map(function ($t) {
+        $data = collect($transfers->items())->map(function ($t) {
             return $this->formatTransferStock($t);
         });
 
         return response()->json([
             'success' => true,
             'data' => $data,
+            'pagination' => [
+                'current_page' => $transfers->currentPage(),
+                'last_page' => $transfers->lastPage(),
+                'per_page' => $transfers->perPage(),
+                'total' => $transfers->total(),
+            ],
         ]);
     }
 

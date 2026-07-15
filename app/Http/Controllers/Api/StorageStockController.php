@@ -43,11 +43,19 @@ class StorageStockController extends Controller
             $query->where('user_id', $request->user()->id);
         }
 
-        $requests = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->get();
+        $perPage = $request->integer('per_page', 20);
+        $requests = $query->orderBy('date', 'desc')->orderBy('id', 'desc')
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $requests
+            'data' => $requests->items(),
+            'pagination' => [
+                'current_page' => $requests->currentPage(),
+                'last_page' => $requests->lastPage(),
+                'per_page' => $requests->perPage(),
+                'total' => $requests->total(),
+            ],
         ]);
     }
 
