@@ -79,4 +79,24 @@ class MonthlySalary extends Model
             ->whereIn('status', [2, 3])
             ->sum('amount');
     }
+
+    /**
+     * Total gaji akhir dihitung on-the-fly: base_salary - potongan + gaji harian.
+     *
+     * Mengesampingkan nilai snapshot kolom `total_salary`/`amount` agar selalu
+     * konsisten dengan accessor daily_salary_total. Dengan begini, ketika status
+     * daily salary berubah (mis. dari unpaid menjadi paid), total slip otomatis
+     * menyesuaikan tanpa perlu regenerate.
+     */
+    public function getTotalSalaryAttribute($value)
+    {
+        $deductions = $this->deductions ?? [];
+        $totalDeductions = (float) ($deductions['late_penalties'] ?? 0)
+            + (float) ($deductions['manual_penalties'] ?? 0)
+            + (float) ($deductions['loan_installments'] ?? 0);
+
+        $result = (float) $this->base_salary - $totalDeductions + $this->daily_salary_total;
+
+        return max(0, $result);
+    }
 }
