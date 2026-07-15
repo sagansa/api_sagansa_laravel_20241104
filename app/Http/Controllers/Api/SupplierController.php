@@ -89,7 +89,7 @@ class SupplierController extends Controller
             'bank_id' => 'nullable|exists:banks,id',
             'bank_account_name' => 'nullable|string|max:255',
             'bank_account_no' => 'nullable|string|max:50',
-            'image' => 'nullable|image|max:2048',
+            'image' => 'nullable|string',
             'qris' => 'nullable|string',
         ]);
 
@@ -109,8 +109,8 @@ class SupplierController extends Controller
         $data['user_id'] = $request->user()->id;
 
         // Image upload handling
-        if ($request->hasFile('image')) {
-            $data['image'] = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image'), 'images/Supplier');
+        if ($request->filled('image')) {
+            $data['image'] = $request->input('image');
         }
 
         $supplier = Supplier::create($data);
@@ -149,7 +149,7 @@ class SupplierController extends Controller
             'subdistrict_id' => 'sometimes|required',
             'postal_code_id' => 'sometimes|required',
             'address' => 'sometimes|required|string',
-            'image' => 'nullable|image|max:2048',
+            'image' => 'nullable|string',
             'status' => 'sometimes|integer|in:1,2,3',
         ]);
 
@@ -176,12 +176,12 @@ class SupplierController extends Controller
         }
 
         // Image upload handling
-        if ($request->hasFile('image')) {
+        if ($request->filled('image')) {
             // Delete old image if it exists
-            if ($supplier->image) {
+            if ($supplier->image && $supplier->image !== $request->input('image')) {
                 app(\App\Contracts\ImageStorageContract::class)->delete($supplier->image);
             }
-            $data['image'] = app(\App\Contracts\ImageStorageContract::class)->upload($request->file('image'), 'images/Supplier');
+            $data['image'] = $request->input('image');
         }
 
         $supplier->update($data);
