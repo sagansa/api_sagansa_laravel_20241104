@@ -62,6 +62,7 @@ Route::get('/login', function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/user-presence', [PresenceController::class, 'getUserPresence']);
+    Route::get('/presences/today', [PresenceController::class, 'getAllTodayPresences']);
     Route::post('/check-in', [PresenceController::class, 'checkIn']);
     Route::post('/check-out', [PresenceController::class, 'checkOut']);
     Route::get('/stores', [PresenceController::class, 'getStores']);
