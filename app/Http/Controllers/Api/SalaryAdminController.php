@@ -11,6 +11,7 @@ use App\Services\SalaryService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class SalaryAdminController extends Controller
 {
@@ -33,19 +34,9 @@ class SalaryAdminController extends Controller
 
         $setting = PayrollPeriodSetting::where('tenant_id', $tenantId)->first();
         $startDay = $setting ? $setting->start_day : 26;
-
-        if ($startDay == 1) {
-            $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
-            $periodEnd = Carbon::create($year, $month, 1)->endOfMonth();
-        } else {
-            $prevMonth = Carbon::create($year, $month, 1)->subMonth();
-            $startDayClamped = min($startDay, $prevMonth->daysInMonth);
-            $periodStart = $prevMonth->day($startDayClamped)->startOfDay();
-
-            $currentMonth = Carbon::create($year, $month, 1);
-            $endDayClamped = min($startDay - 1, $currentMonth->daysInMonth);
-            $periodEnd = $currentMonth->day($endDayClamped)->endOfDay();
-        }
+        $range = \App\Services\SalaryService::getPeriodRange($year, $month, $startDay);
+        $periodStart = $range['start'];
+        $periodEnd = $range['end'];
 
         $userIds = Presence::whereBetween('check_in', [$periodStart, $periodEnd])
             ->where('status', '2')
@@ -70,7 +61,7 @@ class SalaryAdminController extends Controller
                 $salaryService->generateMonthlySalary($userId, $year, $month);
                 $count++;
             } catch (\Exception $e) {
-                // Abaikan error individu agar proses lanjut
+                \Illuminate\Support\Facades\Log::error("SalaryController generate failed for user {$userId}: ".$e->getMessage());
             }
         }
 
@@ -130,6 +121,12 @@ class SalaryAdminController extends Controller
         ]);
 
         $salary = MonthlySalary::findOrFail($id);
+        if ($salary->status !== MonthlySalary::STATUS_APPROVED) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya slip berstatus Diproses (Approved) yang bisa dibayar.',
+            ], 422);
+        }
         $salary->update([
             'paid_amount'   => $data['paid_amount'],
             'payment_date'  => $data['payment_date'],

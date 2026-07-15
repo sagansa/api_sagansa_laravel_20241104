@@ -25,14 +25,18 @@ class SalaryController extends Controller
         $isAdmin = $user->hasRole('admin');
 
         $query = MonthlySalary::with('user')
-            ->when(!$isAdmin, fn($q) => $q->where('status', '>=', MonthlySalary::STATUS_APPROVED))
-            ->when($isAdmin && $request->filled('status'), function ($q) use ($request) {
-                $map = ['draft' => 1, 'processing' => 2, 'paid' => 3];
-                $val = $map[$request->input('status')] ?? null;
-                if ($val !== null) {
-                    $q->where('status', $val);
-                }
-            })
+            ->when(
+                !$request->has('page'),
+                fn($q) => $q->where('status', '>=', MonthlySalary::STATUS_APPROVED),
+                function ($q) use ($request) {
+                    // admin paginated list: optional status filter
+                    $map = ['draft' => 1, 'processing' => 2, 'paid' => 3];
+                    $val = $map[$request->input('status')] ?? null;
+                    if ($val !== null) {
+                        $q->where('status', $val);
+                    }
+                },
+            )
             ->orderBy('period_start', 'desc');
 
         // The admin "view all" path is opt-in via the `page` param. The legacy

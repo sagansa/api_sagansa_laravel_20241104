@@ -23,6 +23,29 @@ use Illuminate\Support\Facades\DB;
 class SalaryService
 {
     /**
+     * Hitung rentang periode penggajian dari PayrollPeriodSetting.start_day.
+     * Returns ['start' => Carbon, 'end' => Carbon].
+     */
+    public static function getPeriodRange(int $year, int $month, int $startDay): array
+    {
+        if ($startDay == 1) {
+            return [
+                'start' => \Carbon\Carbon::create($year, $month, 1)->startOfMonth(),
+                'end' => \Carbon\Carbon::create($year, $month, 1)->endOfMonth(),
+            ];
+        }
+        $prevMonth = \Carbon\Carbon::create($year, $month, 1)->subMonth();
+        $startDayClamped = min($startDay, $prevMonth->daysInMonth);
+        $periodStart = $prevMonth->day($startDayClamped)->startOfDay();
+
+        $currentMonth = \Carbon\Carbon::create($year, $month, 1);
+        $endDayClamped = min($startDay - 1, $currentMonth->daysInMonth);
+        $periodEnd = $currentMonth->day($endDayClamped)->endOfDay();
+
+        return ['start' => $periodStart, 'end' => $periodEnd];
+    }
+
+    /**
      * Generate atau update gaji bulanan
      */
     public function generateMonthlySalary($userId, $year, $month)
@@ -50,20 +73,9 @@ class SalaryService
         }
 
         $startDay = $setting->start_day;
-
-        // Hitung rentang tanggal dinamis
-        if ($startDay == 1) {
-            $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
-            $periodEnd = Carbon::create($year, $month, 1)->endOfMonth();
-        } else {
-            $prevMonth = Carbon::create($year, $month, 1)->subMonth();
-            $startDayClamped = min($startDay, $prevMonth->daysInMonth);
-            $periodStart = $prevMonth->day($startDayClamped)->startOfDay();
-
-            $currentMonth = Carbon::create($year, $month, 1);
-            $endDayClamped = min($startDay - 1, $currentMonth->daysInMonth);
-            $periodEnd = $currentMonth->day($endDayClamped)->endOfDay();
-        }
+        $range = self::getPeriodRange($year, $month, $startDay);
+        $periodStart = $range['start'];
+        $periodEnd = $range['end'];
 
         // Ambil semua presensi valid ('2') karyawan dalam rentang tanggal
         $presences = Presence::where('created_by_id', $userId)

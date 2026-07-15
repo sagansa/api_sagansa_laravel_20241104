@@ -65,6 +65,10 @@ class Presence extends Model
      */
     public function calculateLateHours()
     {
+        if (!$this->shiftStore) {
+            return 2;
+        }
+
         if (is_null($this->check_in)) {
             return 2;
         }
@@ -88,6 +92,10 @@ class Presence extends Model
      */
     public function calculateCheckOutPenalty()
     {
+        if (!$this->shiftStore) {
+            return 2;
+        }
+
         if (is_null($this->check_out)) {
             return 2;
         }
