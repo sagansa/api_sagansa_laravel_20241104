@@ -27,26 +27,36 @@ class HygieneController extends Controller
 
     public function todayStatus(Request $request)
     {
-        $today = Carbon::today();
-        $storeId = $request->query('store_id');
-
-        if ($storeId) {
-            $existing = Hygiene::where('store_id', $storeId)
-                ->whereDate('created_at', $today)
-                ->exists();
-        } else {
-            $userId = $request->user()->id;
-            $existing = Hygiene::where('created_by_id', $userId)
-                ->whereDate('created_at', $today)
-                ->exists();
-        }
-
+        // Sementara nonaktifkan validasi kebersihan sebelum check-in
+        // Selalu return true agar user bisa check-in tanpa harus isi laporan kebersihan
         return response()->json([
             'status' => 'success',
             'data' => [
-                'has_submitted_today' => $existing,
+                'has_submitted_today' => true,
             ],
         ]);
+
+        // Kode asli (dinonaktifkan sementara):
+        // $today = Carbon::today();
+        // $storeId = $request->query('store_id');
+        //
+        // if ($storeId) {
+        //     $existing = Hygiene::where('store_id', $storeId)
+        //         ->whereDate('created_at', $today)
+        //         ->exists();
+        // } else {
+        //     $userId = $request->user()->id;
+        //     $existing = Hygiene::where('created_by_id', $userId)
+        //         ->whereDate('created_at', $today)
+        //         ->exists();
+        // }
+        //
+        // return response()->json([
+        //     'status' => 'success',
+        //     'data' => [
+        //         'has_submitted_today' => $existing,
+        //     ],
+        // ]);
     }
 
     public function index(Request $request)
