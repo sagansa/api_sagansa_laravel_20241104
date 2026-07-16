@@ -118,7 +118,7 @@ class AdminLeaveController extends Controller
     /**
      * Approve a leave request
      */
-    public function approve(Request $request, string $id): JsonResponse
+    public function approve(string $id, Request $request): JsonResponse
     {
         $leave = PermitEmployee::find($id);
 
@@ -164,7 +164,7 @@ class AdminLeaveController extends Controller
     /**
      * Reject a leave request
      */
-    public function reject(Request $request, string $id): JsonResponse
+    public function reject(string $id, Request $request): JsonResponse
     {
         $request->validate([
             'reject_note' => 'nullable|string|max:500'
