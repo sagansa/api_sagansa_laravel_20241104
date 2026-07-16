@@ -154,6 +154,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'invoices']);
         Route::get('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showInvoice']);
         Route::put('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'updateInvoice']);
+        Route::post('/invoices/{id}/receive', [\App\Http\Controllers\Api\ProcurementController::class, 'receiveInvoice']);
         Route::get('/payment-receipts', [\App\Http\Controllers\Api\ProcurementController::class, 'paymentReceipts']);
         Route::get('/payment-receipts/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showPaymentReceipt']);
         Route::get('/payment-receipts/{id}/qris', [\App\Http\Controllers\Api\ProcurementController::class, 'paymentReceiptQris']);
