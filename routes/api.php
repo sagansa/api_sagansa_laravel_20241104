@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AssetCheckController;
 use App\Http\Controllers\Api\AssetIssueController;
 use App\Http\Controllers\Api\ProductAssetConfigController;
+use App\Http\Controllers\Api\RecruitmentController;
 use Illuminate\Support\Facades\Route;
 
 // Media endpoint: serve storage files through Laravel so CORS headers are applied.
@@ -61,6 +62,10 @@ Route::get('/login', function () {
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
+
+    // Profile (data pribadi + rekening) — baca/tulis DB recruitment.
+    Route::get('/profile', [RecruitmentController::class, 'getDetails']);
+    Route::post('/profile', [RecruitmentController::class, 'updateDetails']);
     Route::get('/user-presence', [PresenceController::class, 'getUserPresence']);
     Route::get('/presences/today', [PresenceController::class, 'getAllTodayPresences']);
     Route::post('/check-in', [PresenceController::class, 'checkIn']);
