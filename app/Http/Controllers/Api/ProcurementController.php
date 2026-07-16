@@ -340,6 +340,54 @@ class ProcurementController extends Controller
     }
 
     /**
+     * Mark an Invoice Purchase as received (order_status: 1 -> 2).
+     * Allowed for staff, admin, super_admin. Not reversible from API.
+     */
+    public function receiveInvoice($id, Request $request)
+    {
+        $invoice = InvoicePurchase::find($id);
+
+        if (!$invoice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice tidak ditemukan.'
+            ], 404);
+        }
+
+        $user = $request->user();
+        $canReceive = $user->hasRole('staff')
+            || $user->hasRole('admin')
+            || $user->hasRole('super_admin');
+
+        if (!$canReceive) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk menerima invoice ini.'
+            ], 403);
+        }
+
+        if ($invoice->order_status !== '1') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice sudah diterima atau berstatus lain.'
+            ], 400);
+        }
+
+        $invoice->order_status = '2';
+        $invoice->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Invoice ditandai sudah diterima.',
+            'data' => $invoice->load([
+                'store', 'supplier', 'createdBy',
+                'detailInvoices.detailRequest.product.unit',
+                'detailInvoices.detailRequest.paymentType',
+            ]),
+        ]);
+    }
+
+    /**
      * Auto-create Invoice from approved items.
      */
     public function createInvoice($id, Request $request)
