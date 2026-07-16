@@ -66,8 +66,16 @@ Route::middleware('auth:sanctum')->group(function () {
     // Profile (data pribadi + rekening) — baca/tulis DB recruitment.
     Route::get('/profile', [RecruitmentController::class, 'getDetails']);
     Route::post('/profile', [RecruitmentController::class, 'updateDetails']);
+
+    // Admin: kelola profil pelamar (list, detail, kunci/buka).
+    Route::prefix('admin/profile')->group(function () {
+        Route::get('/', [RecruitmentController::class, 'index']);
+        Route::get('/{id}', [RecruitmentController::class, 'show']);
+        Route::post('/{id}/status', [RecruitmentController::class, 'setStatus']);
+    });
     Route::get('/user-presence', [PresenceController::class, 'getUserPresence']);
     Route::get('/presences/today', [PresenceController::class, 'getAllTodayPresences']);
+    Route::get('/presences/monthly', [PresenceController::class, 'monthly']);
     Route::post('/check-in', [PresenceController::class, 'checkIn']);
     Route::post('/check-out', [PresenceController::class, 'checkOut']);
     Route::get('/stores', [PresenceController::class, 'getStores']);

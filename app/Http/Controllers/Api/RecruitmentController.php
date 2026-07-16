@@ -126,4 +126,98 @@ class RecruitmentController extends Controller
 
         return false;
     }
+
+    /**
+     * ADMIN: List seluruh profil pelamar beserta status & info kunci.
+     */
+    public function index(Request $request)
+    {
+        $perPage = (int) $request->query('per_page', 20);
+        $status = $request->query('status');
+
+        $query = ApplicantDetail::with('user')
+            ->when($status, fn ($q) => $q->where('status', $status))
+            ->orderBy('id', 'desc');
+
+        $paginator = $query->paginate($perPage);
+
+        $data = collect($paginator->items())->map(function (ApplicantDetail $d) {
+            return [
+                'id' => $d->id,
+                'user_id' => $d->user_id,
+                'name' => $d->user?->name,
+                'email' => $d->user?->email,
+                'status' => $d->status,
+                'join_date' => $d->join_date,
+                'locked' => $this->isLocked($d),
+                'nickname' => $d->nickname,
+                'bank_account_name' => $d->bank_account_name,
+                'bank_account_number' => $d->bank_account_number,
+                'bank_name' => $d->bank_name,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * ADMIN: Detail 1 profil (data pribadi + rekening + info user).
+     */
+    public function show(Request $request, $id)
+    {
+        $details = ApplicantDetail::with('user')->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'details' => $details,
+            'user' => $details->user
+                ? ['id' => $details->user->id, 'name' => $details->user->name, 'email' => $details->user->email]
+                : null,
+            'locked' => $this->isLocked($details),
+        ]);
+    }
+
+    /**
+     * ADMIN: Ubah status profil (kunci / buka kunci).
+     *
+     * - status = 'draft'  -> buka kunci (user boleh ubah semua field).
+     * - status = 'submitted' + join_date = hari ini -> kunci
+     *   (hanya rekening yg bisa diubah user).
+     */
+    public function setStatus(Request $request, $id)
+    {
+        $request->validate([
+            'status' => 'required|string|in:draft,submitted',
+        ]);
+
+        $details = ApplicantDetail::findOrFail($id);
+
+        if ($request->status === 'submitted') {
+            $details->update([
+                'status' => 'submitted',
+                'join_date' => $details->join_date ?? now()->toDateString(),
+            ]);
+        } else {
+            // draft: buka kunci (biarkan join_date tetap, status cukup draft)
+            $details->update(['status' => 'draft']);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $request->status === 'submitted'
+                ? 'Profil dikunci (hanya rekening yang dapat diubah).'
+                : 'Profil dibuka (semua data dapat diubah).',
+            'details' => $details,
+            'locked' => $this->isLocked($details),
+        ]);
+    }
 }

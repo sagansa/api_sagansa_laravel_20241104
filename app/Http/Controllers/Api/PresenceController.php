@@ -17,6 +17,85 @@ use Illuminate\Support\Facades\Log;
 
 class PresenceController extends Controller
 {
+    /**
+     * Rekap presensi untuk satu periode cut-off gaji bulanan (YYYY-MM).
+     * Admin: lihat karyawan mana pun (?user_id=). Non-admin: dipaksa ke dirinya sendiri.
+     * Format memakai formatPresence() (sudah jalan di /user-presence → home_page.dart).
+     */
+    public function monthly(Request $request)
+    {
+        $request->validate([
+            'period'  => ['required', 'string', 'regex:/^\d{4}-\d{2}$/'],
+            'user_id' => ['nullable', 'integer'],
+        ]);
+
+        $authUser = Auth::user();
+        $isAdmin = $authUser->hasRole('admin') || $authUser->hasRole('super_admin');
+
+        // 1. Target employee (auth user_id) & validasi akses
+        if ($request->filled('user_id') && $isAdmin) {
+            $targetAuthUserId = (int) $request->input('user_id');
+            $targetUser = \App\Models\User::find($targetAuthUserId, ['id', 'name', 'email']);
+            abort_unless($targetUser, 404, 'Karyawan tidak ditemukan.');
+        } else {
+            $targetAuthUserId = $authUser->id;
+            $targetUser = $authUser;
+        }
+
+        // 2. Resolve presence-DB created_by_id via email.
+        //    Path admin: lookup langsung + 404 (JANGAN pakai resolvePresenceUserId —
+        //    fallback-nya menyisipkan baris users baru untuk karyawan target).
+        //    Path non-admin: resolvePresenceUserId($authUser) yang sudah ada.
+        $presenceUserId = ($isAdmin && $request->filled('user_id'))
+            ? (int) (DB::table('users')->where('email', $targetUser->email)->value('id')
+                ?? abort(404, 'Data presensi karyawan tidak ditemukan.'))
+            : $this->resolvePresenceUserId($authUser);
+
+        // 3. Rentang cut-off via SalaryService::getPeriodRange (reuse, identik dgn generate gaji).
+        [$year, $month] = array_map('intval', explode('-', $request->input('period')));
+        $tenantId = $targetUser->tenant_id
+            ?? \App\Models\Store::first()?->tenant_id
+            ?? DB::connection('mysql_auth')->table('tenants')->first()?->id
+            ?? '00000000-0000-0000-0000-000000000000';
+        $setting = \App\Models\PayrollPeriodSetting::where('tenant_id', $tenantId)->first();
+        $startDay = $setting ? (int) $setting->start_day : 26;
+        $range = \App\Services\SalaryService::getPeriodRange($year, $month, $startDay);
+
+        // 4. Ambil SEMUA presensi di rentang (semua status), eager load relasi
+        $presences = Presence::with(['store', 'shiftStore'])
+            ->where('created_by_id', $presenceUserId)
+            ->whereBetween('check_in', [$range['start'], $range['end']])
+            ->orderBy('check_in', 'desc')
+            ->get();
+
+        // 5. Format pakai formatPresence() yang sudah ada (sama dgn /user-presence).
+        $formatted = $presences->map(fn($p) => $this->formatPresence($p))->values();
+
+        // 6. Summary berdasar field formatPresence() yang benar-benar ada
+        //    (check_in_status, check_out_status, late_minutes).
+        $summary = [
+            'total_hadir'        => $formatted->count(),
+            'total_menit_terlambat' => (int) $formatted->sum(fn($x) => $x['late_minutes'] ?? 0),
+            'count_terlambat'    => (int) $formatted->filter(fn($x) => ($x['check_in_status'] ?? null) === 'terlambat')->count(),
+            'count_tepat_waktu'  => (int) $formatted->filter(fn($x) => ($x['check_in_status'] ?? null) === 'tepat_waktu')->count(),
+            'count_pulang_cepat' => (int) $formatted->filter(fn($x) => ($x['check_out_status'] ?? null) === 'pulang_cepat')->count(),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'user_id'      => $targetAuthUserId,
+                'user_name'    => $targetUser->name,
+                'period'       => $request->input('period'),
+                'period_label' => Carbon::create($year, $month, 1)->translatedFormat('F Y'),
+                'start'        => $range['start']->toDateString(),
+                'end'          => $range['end']->toDateString(),
+                'summary'      => $summary,
+                'presences'    => $formatted,
+            ],
+        ]);
+    }
+
     public function getUserPresence(Request $request)
     {
         $user = Auth::user();
