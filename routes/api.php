@@ -198,6 +198,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\HygieneController::class, 'index']);
         Route::get('/{id}', [\App\Http\Controllers\Api\HygieneController::class, 'show']);
         Route::post('/', [\App\Http\Controllers\Api\HygieneController::class, 'store']);
+        Route::patch('/of-rooms/{id}', [\App\Http\Controllers\Api\HygieneController::class, 'updateRoom']);
     });
 
     Route::prefix('closing-stores')->group(function () {

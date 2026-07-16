@@ -17,7 +17,9 @@ class HygieneController extends Controller
 {
     public function rooms()
     {
-        $rooms = Room::orderBy('name', 'asc')->get(['id', 'name']);
+        $rooms = Room::where('is_active', 1)
+            ->orderBy('name', 'asc')
+            ->get(['id', 'name', 'is_active']);
 
         return response()->json([
             'status' => 'success',
@@ -176,6 +178,37 @@ class HygieneController extends Controller
             'message' => 'Laporan kebersihan berhasil dikirim',
             'data' => $hygiene,
         ], 201);
+    }
+
+    public function updateRoom(Request $request, $id)
+    {
+        $hygieneOfRoom = HygieneOfRoom::findOrFail($id);
+
+        $validator = Validator::make($request->all(), [
+            'condition' => 'nullable|integer|in:1,2,3',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $hygieneOfRoom->update([
+            'condition' => $request->input('condition', $hygieneOfRoom->condition),
+            'notes' => $request->input('notes', $hygieneOfRoom->notes),
+        ]);
+
+        $hygieneOfRoom->load('room:id,name');
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Penilaian kebersihan berhasil diperbarui',
+            'data' => $hygieneOfRoom,
+        ]);
     }
 
     private function userTodayStoreId($user): ?int
