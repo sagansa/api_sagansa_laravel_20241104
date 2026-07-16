@@ -57,7 +57,8 @@ class User extends Authenticatable
 
     public function applicantDetail()
     {
-        return $this->hasOne(ApplicantDetail::class);
+        return $this->hasOne(ApplicantDetail::class, 'user_id', 'id')
+            ->on('mysql_recruitment');
     }
 
     public function stores()
