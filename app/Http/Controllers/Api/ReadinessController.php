@@ -13,6 +13,25 @@ use Illuminate\Support\Facades\Log;
 
 class ReadinessController extends Controller
 {
+    /**
+     * List the authenticated user's readiness history.
+     */
+    public function index(Request $request)
+    {
+        $user = Auth::user();
+        $userId = $this->resolvePresenceUserId($user);
+
+        $readinesses = Readiness::with(['createdBy:id,name'])
+            ->where('created_by_id', $userId)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $readinesses,
+        ]);
+    }
+
     public function checkStatus(Request $request)
     {
         $user = Auth::user();

@@ -187,6 +187,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('readiness')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\ReadinessController::class, 'index']);
         Route::get('/status', [\App\Http\Controllers\Api\ReadinessController::class, 'checkStatus']);
         Route::post('/', [\App\Http\Controllers\Api\ReadinessController::class, 'store']);
     });
