@@ -219,4 +219,68 @@ class SalesDashboardTest extends TestCase
             $this->assertCount(24, $res->json('data.points'), "Periode {$p} harus 24 titik jam");
         }
     }
+
+    public function test_products_view_returns_items_with_qty_and_revenue(): void
+    {
+        $admin = $this->adminOrSkip();
+        $productId = \DB::table('products')->value('id');
+        if ($productId === null) {
+            $this->markTestSkipped('No products in DB');
+        }
+        $store = \App\Models\Store::first();
+        if (!$store) {
+            $this->markTestSkipped('Need at least 1 store');
+        }
+
+        $today = now()->format('Y-m-d');
+        $soId = \DB::table('sales_orders')->insertGetId([
+            'for' => '3', 'delivery_date' => $today, 'store_id' => $store->id,
+            'delivery_status' => 3, 'payment_status' => 1, 'total_price' => 5000,
+            'ordered_by_id' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        \DB::table('detail_sales_orders')->insert([
+            'product_id' => $productId, 'quantity' => 5, 'unit_price' => 1000,
+            'subtotal_price' => 5000, 'sales_order_id' => $soId,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=today&view=products&sort=qty');
+
+        $res->assertOk()
+            ->assertJsonStructure(['data' => ['items', 'meta']]);
+
+        $item = collect($res->json('data.items'))->firstWhere('product_id', $productId);
+        $this->assertNotNull($item);
+        $this->assertEquals(5, $item['qty']);
+        $this->assertEquals(5000, $item['revenue']);
+        $this->assertNotNull($item['product_name']);
+    }
+
+    public function test_products_view_paginates(): void
+    {
+        $admin = $this->adminOrSkip();
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=year&view=products&per_page=2');
+
+        $res->assertOk();
+        $items = $res->json('data.items');
+        $this->assertLessThanOrEqual(2, count($items));
+        $this->assertNotNull($res->json('data.meta.last_page'));
+    }
+
+    public function test_products_view_sort_by_revenue_orders_correctly(): void
+    {
+        $admin = $this->adminOrSkip();
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=year&view=products&sort=revenue');
+
+        $res->assertOk()->assertJsonPath('data.sort', 'revenue');
+        $items = $res->json('data.items');
+        if (count($items) >= 2) {
+            $this->assertGreaterThanOrEqual($items[1]['revenue'], $items[0]['revenue']);
+        }
+    }
 }

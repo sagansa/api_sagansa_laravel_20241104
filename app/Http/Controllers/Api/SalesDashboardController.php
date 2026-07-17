@@ -170,7 +170,64 @@ class SalesDashboardController extends Controller
 
     private function productsView(array $range, int $page, int $perPage, string $sort): array
     {
-        return ['items' => [], 'meta' => ['current_page' => $page, 'last_page' => 1, 'per_page' => $perPage, 'total' => 0]];
+        $baseQuery = DB::table('detail_sales_orders as dso')
+            ->join('sales_orders as so', 'dso.sales_order_id', '=', 'so.id')
+            ->whereNull('so.deleted_at')
+            ->where('so.delivery_status', 3)
+            ->whereBetween('so.delivery_date', [$range['from'], $range['to']])
+            ->whereNotNull('dso.product_id')
+            ->select(
+                'dso.product_id',
+                DB::raw('SUM(dso.quantity) as qty'),
+                DB::raw('SUM(dso.subtotal_price) as revenue')
+            )
+            ->groupBy('dso.product_id');
+
+        $baseQuery->orderBy($sort === 'revenue' ? 'revenue' : 'qty', 'desc');
+
+        $total = DB::table('detail_sales_orders as dso')
+            ->join('sales_orders as so', 'dso.sales_order_id', '=', 'so.id')
+            ->whereNull('so.deleted_at')
+            ->where('so.delivery_status', 3)
+            ->whereBetween('so.delivery_date', [$range['from'], $range['to']])
+            ->whereNotNull('dso.product_id')
+            ->distinct()
+            ->count('dso.product_id');
+
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $offset = ($page - 1) * $perPage;
+        $rows = (clone $baseQuery)->skip($offset)->take($perPage)->get();
+
+        $items = $rows;
+        if ($rows->isNotEmpty()) {
+            $products = DB::table('products')
+                ->leftJoin('units', 'products.unit_id', '=', 'units.id')
+                ->whereIn('products.id', $rows->pluck('product_id'))
+                ->select('products.id', 'products.name', 'units.unit')
+                ->get()
+                ->keyBy('id');
+
+            $items = $rows->map(function ($r) use ($products) {
+                $p = $products->get($r->product_id);
+                return [
+                    'product_id'   => (int) $r->product_id,
+                    'product_name' => $p?->name,
+                    'unit'         => $p?->unit,
+                    'qty'          => (int) $r->qty,
+                    'revenue'      => (int) $r->revenue,
+                ];
+            })->values();
+        }
+
+        return [
+            'items' => $items,
+            'meta'  => [
+                'current_page' => $page,
+                'last_page'    => $lastPage,
+                'per_page'     => $perPage,
+                'total'        => $total,
+            ],
+        ];
     }
 
     private function channelsView(array $range): array
