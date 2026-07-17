@@ -766,9 +766,20 @@ class PresenceController extends Controller
             ->orderBy('check_in', 'desc')
             ->get();
 
+        // Map supaya response menyertakan field `user` (dengan name) yang konsisten
+        // dengan konsumsi Flutter. Eloquent default menyimpan relasi `createdBy()`
+        // sebagai key `created_by`, yang sulit dipredict client. Kita expose sebagai
+        // `user: {name: ...}` + tetap pertahankan `created_by` untuk backward compat.
+        $data = $presences->map(function ($p) {
+            $row = $p->toArray();
+            $row['user'] = $p->createdBy ? ['name' => $p->createdBy->name] : null;
+            $row['user_name'] = $p->createdBy?->name;
+            return $row;
+        });
+
         return response()->json([
             'status' => 'success',
-            'data' => $presences,
+            'data' => $data,
         ]);
     }
 
