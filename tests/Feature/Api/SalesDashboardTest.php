@@ -176,4 +176,47 @@ class SalesDashboardTest extends TestCase
         $res->assertOk();
         $this->assertNotEquals(999999, $res->json('data.omzet'));
     }
+
+    public function test_trend_returns_points_with_interval(): void
+    {
+        $admin = $this->adminOrSkip();
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=month&view=trend');
+
+        $res->assertOk()
+            ->assertJsonPath('data.interval', 'day')
+            ->assertJsonStructure(['data' => ['view', 'periode', 'interval', 'points']]);
+
+        $points = $res->json('data.points');
+        $this->assertIsArray($points);
+        $this->assertGreaterThanOrEqual(1, count($points));
+        if (!empty($points)) {
+            $this->assertArrayHasKey('label', $points[0]);
+            $this->assertArrayHasKey('omzet', $points[0]);
+        }
+    }
+
+    public function test_trend_year_has_twelve_points(): void
+    {
+        $admin = $this->adminOrSkip();
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=year&view=trend');
+
+        $res->assertOk()->assertJsonPath('data.interval', 'month');
+        $this->assertCount(12, $res->json('data.points'));
+    }
+
+    public function test_trend_today_yesterday_have_24_hour_points(): void
+    {
+        $admin = $this->adminOrSkip();
+
+        Sanctum::actingAs($admin);
+        foreach (['today', 'yesterday'] as $p) {
+            $res = $this->getJson("/sales-dashboard?periode={$p}&view=trend");
+            $res->assertOk()->assertJsonPath('data.interval', 'hour');
+            $this->assertCount(24, $res->json('data.points'), "Periode {$p} harus 24 titik jam");
+        }
+    }
 }

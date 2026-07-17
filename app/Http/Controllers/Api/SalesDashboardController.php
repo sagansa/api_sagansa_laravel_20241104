@@ -117,7 +117,55 @@ class SalesDashboardController extends Controller
 
     private function trendView(array $range, string $periode): array
     {
-        return ['interval' => 'day', 'points' => []];
+        [$selectExpr, $interval, $allBuckets] = $this->trendConfig($periode);
+
+        $rows = DB::table('sales_orders')
+            ->whereNull('deleted_at')
+            ->where('delivery_status', 3)
+            ->whereBetween('delivery_date', [$range['from'], $range['to']])
+            ->selectRaw($selectExpr . " as bucket, SUM(total_price) as omzet")
+            ->groupBy('bucket')
+            ->orderBy('bucket')
+            ->get()
+            ->keyBy('bucket');
+
+        $points = collect($allBuckets)->map(function ($bucket) use ($rows) {
+            return [
+                'label' => $bucket,
+                'omzet' => (int) ($rows[$bucket]->omzet ?? 0),
+            ];
+        })->values();
+
+        return [
+            'interval' => $interval,
+            'points'   => $points,
+        ];
+    }
+
+    private function trendConfig(string $periode): array
+    {
+        $now = Carbon::now('Asia/Jakarta');
+        return match($periode) {
+            'today', 'yesterday' => [
+                "DATE_FORMAT(delivery_date, '%H:00')",
+                'hour',
+                array_map(fn($h) => sprintf('%02d:00', $h), range(0, 23)),
+            ],
+            'month' => [
+                "DATE(delivery_date)",
+                'day',
+                collect(range(1, $now->day))->map(fn($d) =>
+                    $now->format('Y-m-') . str_pad($d, 2, '0', STR_PAD_LEFT)
+                )->all(),
+            ],
+            'year' => [
+                "DATE_FORMAT(delivery_date, '%Y-%m')",
+                'month',
+                array_map(fn($m) =>
+                    $now->format('Y-') . str_pad($m, 2, '0', STR_PAD_LEFT), range(1, 12)
+                ),
+            ],
+        };
     }
 
     private function productsView(array $range, int $page, int $perPage, string $sort): array
