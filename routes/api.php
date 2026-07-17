@@ -177,6 +177,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\Api\TransferStockController::class, 'show']);
     });
 
+    // Inventory Anomaly Comparison (admin & super_admin only — guarded in controller)
+    Route::get('/inventory-anomalies/compare', [\App\Http\Controllers\Api\InventoryAnomalyController::class, 'compare']);
+
     Route::get('/utilities', [\App\Http\Controllers\Api\UtilityController::class, 'index']);
     Route::prefix('utility-usages')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\UtilityUsageController::class, 'index']);
