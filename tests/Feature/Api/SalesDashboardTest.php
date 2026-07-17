@@ -344,4 +344,76 @@ class SalesDashboardTest extends TestCase
             $this->assertContains($l, $validLabels, "Unexpected label: {$l}");
         }
     }
+
+    public function test_trend_compare_year_returns_omzet_prev(): void
+    {
+        $admin = $this->adminOrSkip();
+        $store = \App\Models\Store::first();
+        if (!$store) {
+            $this->markTestSkipped('Need at least 1 store');
+        }
+
+        $currentYear = (int) now()->format('Y');
+        $prevYear = $currentYear - 1;
+        $currentYearMonth = sprintf('%04d-01', $currentYear);
+
+        // Insert SO Jan tahun ini
+        \DB::table('sales_orders')->insert([
+            'for' => '3',
+            'delivery_date' => $currentYear . '-01-15',
+            'store_id' => $store->id,
+            'delivery_status' => 3,
+            'payment_status' => 1,
+            'total_price' => 10000000,
+            'ordered_by_id' => 1,
+            'created_at' => $currentYear . '-01-15 10:00:00',
+            'updated_at' => $currentYear . '-01-15 10:00:00',
+        ]);
+        // Insert SO Jan tahun lalu
+        \DB::table('sales_orders')->insert([
+            'for' => '3',
+            'delivery_date' => $prevYear . '-01-15',
+            'store_id' => $store->id,
+            'delivery_status' => 3,
+            'payment_status' => 1,
+            'total_price' => 8500000,
+            'ordered_by_id' => 1,
+            'created_at' => $prevYear . '-01-15 10:00:00',
+            'updated_at' => $prevYear . '-01-15 10:00:00',
+        ]);
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson("/sales-dashboard?periode=year&view=trend&compare_year={$prevYear}");
+
+        $res->assertOk()
+            ->assertJsonPath('data.compare_year', $prevYear);
+        $points = $res->json('data.points');
+        $janPoint = collect($points)->firstWhere('label', $currentYearMonth);
+        $this->assertNotNull($janPoint, 'Jan current year point must exist');
+        $this->assertEquals(10000000, $janPoint['omzet']);
+        $this->assertEquals(8500000, $janPoint['omzet_prev']);
+    }
+
+    public function test_trend_compare_year_same_as_current_returns_null_compare(): void
+    {
+        $admin = $this->adminOrSkip();
+        $currentYear = (int) now()->format('Y');
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson("/sales-dashboard?periode=year&view=trend&compare_year={$currentYear}");
+
+        $res->assertOk()->assertJsonPath('data.compare_year', null);
+        $points = $res->json('data.points');
+        $this->assertArrayNotHasKey('omzet_prev', $points[0]);
+    }
+
+    public function test_trend_compare_year_invalid_returns_422(): void
+    {
+        $admin = $this->adminOrSkip();
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=year&view=trend&compare_year=1999');
+
+        $res->assertStatus(422);
+    }
 }
