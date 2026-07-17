@@ -103,7 +103,7 @@ class SalesDashboardController extends Controller
         return DB::table('sales_orders as so')
             ->whereNull('so.deleted_at')
             ->where('so.delivery_status', 3) // 3 = terkirim
-            ->whereBetween('so.delivery_date', [$range['from'], $range['to']]);
+            ->whereBetween('so.created_at', [$range['from'], $range['to']]);
     }
 
     private function summaryView(array $range): array
@@ -151,19 +151,19 @@ class SalesDashboardController extends Controller
         $now = Carbon::now('Asia/Jakarta');
         return match($periode) {
             'today', 'yesterday' => [
-                "DATE_FORMAT(delivery_date, '%H:00')",
+                "DATE_FORMAT(created_at, '%H:00')",
                 'hour',
                 array_map(fn($h) => sprintf('%02d:00', $h), range(0, 23)),
             ],
             'month' => [
-                "DATE(delivery_date)",
+                "DATE(created_at)",
                 'day',
                 collect(range(1, $now->day))->map(fn($d) =>
                     $now->format('Y-m-') . str_pad($d, 2, '0', STR_PAD_LEFT)
                 )->all(),
             ],
             'year' => [
-                "DATE_FORMAT(delivery_date, '%Y-%m')",
+                "DATE_FORMAT(created_at, '%Y-%m')",
                 'month',
                 array_map(fn($m) =>
                     $now->format('Y-') . str_pad($m, 2, '0', STR_PAD_LEFT), range(1, 12)
