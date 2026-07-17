@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class InventoryAnomalyController extends Controller
 {
@@ -38,22 +39,41 @@ class InventoryAnomalyController extends Controller
 
         $soldMap = $this->buildSoldMap($dateFrom, $dateTo, $storeIds);
 
-        // v1 partial: items = sold-only, stock integration di task berikutnya.
-        $productIds = array_keys($soldMap);
+        $prevCutoff = Carbon::parse($dateFrom)->subDay()->toDateString();
+        $stockBeforeMap = $this->buildStockMap($prevCutoff, $storeIds);
+        $stockAfterMap  = $this->buildStockMap($dateTo, $storeIds);
+
+        // Union product IDs.
+        $allProductIds = array_unique(array_merge(
+            array_keys($soldMap),
+            array_keys($stockBeforeMap),
+            array_keys($stockAfterMap)
+        ));
+        sort($allProductIds);
+
         $items = [];
-        foreach ($productIds as $pid) {
+        $totalSoldQty = 0;
+        $totalStockOutQty = 0;
+        foreach ($allProductIds as $pid) {
+            $sold   = $soldMap[$pid] ?? 0;
+            $before = array_key_exists($pid, $stockBeforeMap) ? $stockBeforeMap[$pid] : null;
+            $after  = array_key_exists($pid, $stockAfterMap)  ? $stockAfterMap[$pid]  : null;
+            $diff   = ($before !== null && $after !== null) ? ($after - $before) : null;
+
             $items[] = [
                 'product_id'    => $pid,
                 'product_name'  => null,
                 'unit'          => null,
-                'sold_qty'      => $soldMap[$pid],
-                'stock_before'  => null,
-                'stock_after'   => null,
-                'stock_diff'    => null,
-                'delta'         => null,
-                'status'        => 'no_stock_data',
+                'sold_qty'      => $sold,
+                'stock_before'  => $before,
+                'stock_after'   => $after,
+                'stock_diff'    => $diff,
+                'delta'         => null, // diisi di task 5
+                'status'        => 'selisih', // placeholder; task 5 mengisi rule sebenarnya
                 'store_breakdown' => null,
             ];
+            $totalSoldQty += $sold;
+            $totalStockOutQty += ($diff !== null && $diff < 0) ? abs($diff) : 0;
         }
 
         return response()->json([
@@ -69,9 +89,9 @@ class InventoryAnomalyController extends Controller
                     'match_count' => 0,
                     'mismatch_count' => 0,
                     'no_so_data_count' => 0,
-                    'no_stock_data_count' => count($items),
-                    'total_sold_qty' => array_sum($soldMap),
-                    'total_stock_out_qty' => 0,
+                    'no_stock_data_count' => 0,
+                    'total_sold_qty' => $totalSoldQty,
+                    'total_stock_out_qty' => $totalStockOutQty,
                 ],
                 'items' => $items,
             ],
@@ -105,6 +125,51 @@ class InventoryAnomalyController extends Controller
         $map = [];
         foreach ($rows as $r) {
             $map[(int) $r->product_id] = (int) $r->sold_qty;
+        }
+        return $map;
+    }
+
+    /**
+     * Snapshot terbaru per product_id sampai tanggal $cutoff (inclusive),
+     * dari stock_cards for='remaining_storage'. Multi-store di-SUM.
+     *
+     * @return array<int,int>  [product_id => snapshot_qty]
+     */
+    private function buildStockMap(string $cutoff, array $storeIds): array
+    {
+        $storePlaceholders = '';
+        $bindings = [$cutoff];
+        if (!empty($storeIds)) {
+            $storePlaceholders = 'AND sc2.store_id IN (' . implode(',', array_fill(0, count($storeIds), '?')) . ') ';
+            $bindings = array_merge([$cutoff], $storeIds, [$cutoff], $storeIds);
+        } else {
+            $bindings = [$cutoff, $cutoff];
+        }
+
+        $storeClauseOuter = $storePlaceholders ? str_replace('sc2.', 'sc.', $storePlaceholders) : '';
+
+        $sql = "
+            SELECT dsc.product_id, SUM(dsc.quantity) as qty
+            FROM detail_stock_cards dsc
+            JOIN stock_cards sc ON dsc.stock_card_id = sc.id
+            JOIN (
+                SELECT dsc2.product_id, MAX(sc2.date) as max_date
+                FROM detail_stock_cards dsc2
+                JOIN stock_cards sc2 ON dsc2.stock_card_id = sc2.id
+                WHERE sc2.for = 'remaining_storage'
+                  AND sc2.date <= ? {$storePlaceholders}
+                GROUP BY dsc2.product_id
+            ) AS latest ON dsc.product_id = latest.product_id AND sc.date = latest.max_date
+            WHERE sc.for = 'remaining_storage'
+              AND sc.date <= ? {$storeClauseOuter}
+            GROUP BY dsc.product_id
+        ";
+
+        $rows = DB::select($sql, $bindings);
+
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->product_id] = (int) $r->qty;
         }
         return $map;
     }
