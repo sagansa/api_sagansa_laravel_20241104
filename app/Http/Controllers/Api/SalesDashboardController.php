@@ -25,6 +25,7 @@ class SalesDashboardController extends Controller
             'page'    => ['nullable', 'integer', 'min:1'],
             'per_page'=> ['nullable', 'integer', 'min:1', 'max:200'],
             'sort'    => ['nullable', 'in:qty,revenue'],
+            'compare_year' => ['nullable', 'integer', 'digits:4', 'between:2000,' . date('Y')],
         ]);
 
         $periode = $validated['periode'] ?? 'today';
@@ -32,6 +33,16 @@ class SalesDashboardController extends Controller
         $page    = max(1, (int) ($validated['page'] ?? 1));
         $perPage = min(max(1, (int) ($validated['per_page'] ?? 50)), 200);
         $sort    = $validated['sort']    ?? 'qty';
+
+        $compareYearRaw = $validated['compare_year'] ?? null;
+        $compareYear = null;
+        if ($compareYearRaw !== null) {
+            $currentYear = (int) Carbon::now('Asia/Jakarta')->format('Y');
+            $y = (int) $compareYearRaw;
+            if ($y >= 2000 && $y <= $currentYear && $y !== $currentYear) {
+                $compareYear = $y;
+            }
+        }
 
         $range = $this->resolveRange($periode);
 
@@ -47,7 +58,7 @@ class SalesDashboardController extends Controller
                 'success' => true,
                 'data'    => array_merge(
                     ['view' => 'trend', 'periode' => $periode],
-                    $this->trendView($range, $periode),
+                    $this->trendView($range, $periode, $compareYear),
                 ),
             ]),
             'products' => response()->json([
@@ -122,7 +133,7 @@ class SalesDashboardController extends Controller
         ];
     }
 
-    private function trendView(array $range, string $periode): array
+    private function trendView(array $range, string $periode, ?int $compareYear): array
     {
         [$selectExpr, $interval, $allBuckets] = $this->trendConfig($periode);
 
@@ -133,16 +144,37 @@ class SalesDashboardController extends Controller
             ->get()
             ->keyBy('bucket');
 
-        $points = collect($allBuckets)->map(function ($bucket) use ($rows) {
-            return [
+        // Compare year: query paralel dengan range & buckets yang di-shift tahun.
+        $prevRows = collect();
+        $prevBuckets = [];
+        if ($compareYear !== null) {
+            [$prevRange, $prevBuckets] = $this->resolvePrevRangeAndBuckets($range, $periode, $compareYear);
+            $prevRows = $this->deliveredSalesOrders($prevRange)
+                ->selectRaw($selectExpr . " as bucket, SUM(total_price) as omzet")
+                ->groupBy('bucket')
+                ->orderBy('bucket')
+                ->get()
+                ->keyBy('bucket');
+        }
+
+        $hasCompare = $compareYear !== null;
+        $points = collect($allBuckets)->map(function ($bucket, $i) use ($rows, $prevRows, $prevBuckets, $hasCompare) {
+            $point = [
                 'label' => $bucket,
                 'omzet' => (int) ($rows[$bucket]->omzet ?? 0),
             ];
+            if ($hasCompare) {
+                // Zip by ordinal index karena label tahun berbeda.
+                $prevBucket = $prevBuckets[$i] ?? null;
+                $point['omzet_prev'] = $prevBucket !== null ? (int) ($prevRows[$prevBucket]->omzet ?? 0) : 0;
+            }
+            return $point;
         })->values();
 
         return [
-            'interval' => $interval,
-            'points'   => $points,
+            'interval'     => $interval,
+            'compare_year' => $compareYear,
+            'points'       => $points,
         ];
     }
 
@@ -170,6 +202,53 @@ class SalesDashboardController extends Controller
                 ),
             ],
         };
+    }
+
+    /**
+     * Untuk compare_year: shift range + bucket ke tahun compareYear.
+     * Return [prevRange, prevBuckets].
+     *
+     * Carbon::setYear() OVERFLOW (bukan throw) untuk 29 Feb di tahun non-kabisat
+     * → clamp manual ke tanggal valid via endOfMonth().
+     */
+    private function resolvePrevRangeAndBuckets(array $range, string $periode, int $compareYear): array
+    {
+        $fromOriginal = Carbon::parse($range['from'], 'Asia/Jakarta');
+        $toOriginal = Carbon::parse($range['to'], 'Asia/Jakarta');
+
+        $lastDayOfPrevMonthForTo = (int) Carbon::create($compareYear, $toOriginal->month)->endOfMonth()->format('d');
+        $lastDayOfPrevMonthForFrom = (int) Carbon::create($compareYear, $fromOriginal->month)->endOfMonth()->format('d');
+
+        $fromDay = min((int) $fromOriginal->format('d'), $lastDayOfPrevMonthForFrom);
+        $toDay = min((int) $toOriginal->format('d'), $lastDayOfPrevMonthForTo);
+
+        $fromStr = sprintf('%04d-%02d-%02d %s',
+            $compareYear, $fromOriginal->month, $fromDay, $fromOriginal->format('H:i:s'));
+        $toStr = sprintf('%04d-%02d-%02d %s',
+            $compareYear, $toOriginal->month, $toDay, $toOriginal->format('H:i:s'));
+
+        $prevRange = ['from' => $fromStr, 'to' => $toStr, 'label' => "Compare {$compareYear}"];
+
+        $prevBuckets = [];
+        switch ($periode) {
+            case 'today':
+            case 'yesterday':
+                $prevBuckets = array_map(fn($h) => sprintf('%02d:00', $h), range(0, 23));
+                break;
+            case 'month':
+                $prevBuckets = collect(range(1, $toDay))
+                    ->map(fn($d) => sprintf('%04d-%02d-%02d', $compareYear, $toOriginal->month, $d))
+                    ->all();
+                break;
+            case 'year':
+                $prevBuckets = array_map(
+                    fn($m) => sprintf('%04d-%02d', $compareYear, $m),
+                    range(1, 12)
+                );
+                break;
+        }
+
+        return [$prevRange, $prevBuckets];
     }
 
     private function productsView(array $range, int $page, int $perPage, string $sort): array
