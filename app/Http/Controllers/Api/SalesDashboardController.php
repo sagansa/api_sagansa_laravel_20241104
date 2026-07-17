@@ -232,6 +232,38 @@ class SalesDashboardController extends Controller
 
     private function channelsView(array $range): array
     {
-        return ['total_omzet' => 0, 'items' => []];
+        $rows = DB::table('sales_orders as so')
+            ->leftJoin('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
+            ->whereNull('so.deleted_at')
+            ->where('so.delivery_status', 3)
+            ->whereBetween('so.delivery_date', [$range['from'], $range['to']])
+            ->select(
+                'so.for',
+                DB::raw('COUNT(DISTINCT so.id) as order_count'),
+                DB::raw('SUM(so.total_price) as omzet'),
+                DB::raw('SUM(dso.quantity) as qty')
+            )
+            ->groupBy('so.for')
+            ->get();
+
+        $labels = ['1' => 'Direct', '2' => 'Employee', '3' => 'Online'];
+        $totalOmzet = (int) $rows->sum(fn($r) => (int) $r->omzet);
+
+        $items = $rows->map(function ($r) use ($labels, $totalOmzet) {
+            $omzet = (int) $r->omzet;
+            return [
+                'channel'       => $r->for,
+                'channel_label' => $labels[$r->for] ?? "Unknown ({$r->for})",
+                'omzet'         => $omzet,
+                'order_count'   => (int) $r->order_count,
+                'qty'           => (int) $r->qty ?: 0,
+                'percentage'    => $totalOmzet > 0 ? round(($omzet / $totalOmzet) * 100, 1) : 0.0,
+            ];
+        })->values();
+
+        return [
+            'total_omzet' => $totalOmzet,
+            'items'       => $items,
+        ];
     }
 }

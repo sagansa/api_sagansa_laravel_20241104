@@ -283,4 +283,65 @@ class SalesDashboardTest extends TestCase
             $this->assertGreaterThanOrEqual($items[1]['revenue'], $items[0]['revenue']);
         }
     }
+
+    public function test_channels_view_returns_breakdown_with_percentage(): void
+    {
+        $admin = $this->adminOrSkip();
+        $store = \App\Models\Store::first();
+        if (!$store) {
+            $this->markTestSkipped('Need at least 1 store');
+        }
+
+        $today = now()->format('Y-m-d');
+        \DB::table('sales_orders')->insert([
+            'for' => '3', 'delivery_date' => $today, 'store_id' => $store->id,
+            'delivery_status' => 3, 'payment_status' => 1, 'total_price' => 1000000,
+            'ordered_by_id' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=today&view=channels');
+
+        $res->assertOk()
+            ->assertJsonStructure(['data' => ['total_omzet', 'items']]);
+
+        $items = $res->json('data.items');
+        $this->assertIsArray($items);
+        if (!empty($items)) {
+            $first = $items[0];
+            $this->assertArrayHasKey('channel', $first);
+            $this->assertArrayHasKey('channel_label', $first);
+            $this->assertArrayHasKey('omzet', $first);
+            $this->assertArrayHasKey('percentage', $first);
+
+            $total = array_sum(array_column($items, 'percentage'));
+            $this->assertEqualsWithDelta(100, $total, 0.5, 'Total percentage should be ~100');
+        }
+    }
+
+    public function test_channels_view_handles_empty_period(): void
+    {
+        $admin = $this->adminOrSkip();
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=today&view=channels');
+
+        $res->assertOk()->assertJsonPath('data.total_omzet', 0);
+    }
+
+    public function test_channels_label_mapping(): void
+    {
+        $admin = $this->adminOrSkip();
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=year&view=channels');
+
+        $res->assertOk();
+        $items = $res->json('data.items');
+        $labels = array_column($items, 'channel_label');
+        $validLabels = ['Direct', 'Employee', 'Online'];
+        foreach ($labels as $l) {
+            $this->assertContains($l, $validLabels, "Unexpected label: {$l}");
+        }
+    }
 }
