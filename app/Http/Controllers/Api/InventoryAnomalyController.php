@@ -51,16 +51,33 @@ class InventoryAnomalyController extends Controller
         ));
         sort($allProductIds);
 
-        $items = [];
-        $totalSoldQty = 0;
-        $totalStockOutQty = 0;
+        // Hitung item + status, skip inactive.
+        $allItems = [];
         foreach ($allProductIds as $pid) {
             $sold   = $soldMap[$pid] ?? 0;
             $before = array_key_exists($pid, $stockBeforeMap) ? $stockBeforeMap[$pid] : null;
             $after  = array_key_exists($pid, $stockAfterMap)  ? $stockAfterMap[$pid]  : null;
             $diff   = ($before !== null && $after !== null) ? ($after - $before) : null;
 
-            $items[] = [
+            // Skip inactive: tidak ada SO dan tidak ada pergerakan stok.
+            if ($sold === 0 && ($diff === 0 || $diff === null)) {
+                continue;
+            }
+
+            $stockOut = ($diff !== null && $diff < 0) ? abs($diff) : 0;
+            $delta = $diff !== null ? ($sold - $stockOut) : null;
+
+            if ($sold > 0 && $diff === null) {
+                $status = 'no_stock_data';
+            } elseif ($sold === 0 && $diff !== null && $diff !== 0) {
+                $status = 'no_so_data';
+            } elseif ($delta === 0) {
+                $status = 'cocok';
+            } else {
+                $status = 'selisih';
+            }
+
+            $allItems[] = [
                 'product_id'    => $pid,
                 'product_name'  => null,
                 'unit'          => null,
@@ -68,13 +85,57 @@ class InventoryAnomalyController extends Controller
                 'stock_before'  => $before,
                 'stock_after'   => $after,
                 'stock_diff'    => $diff,
-                'delta'         => null, // diisi di task 5
-                'status'        => 'selisih', // placeholder; task 5 mengisi rule sebenarnya
+                'delta'         => $delta,
+                'status'        => $status,
                 'store_breakdown' => null,
             ];
-            $totalSoldQty += $sold;
-            $totalStockOutQty += ($diff !== null && $diff < 0) ? abs($diff) : 0;
         }
+
+        // Sortir: anomaly (delta != 0) dulu, by |delta| desc.
+        usort($allItems, function ($a, $b) {
+            $aAnom = ($a['delta'] !== null && $a['delta'] !== 0) ? 1 : 0;
+            $bAnom = ($b['delta'] !== null && $b['delta'] !== 0) ? 1 : 0;
+            if ($aAnom !== $bAnom) {
+                return $bAnom - $aAnom;
+            }
+            $aAbs = abs($a['delta'] ?? 0);
+            $bAbs = abs($b['delta'] ?? 0);
+            return $bAbs - $aAbs;
+        });
+
+        // Pagination manual.
+        $total = count($allItems);
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $offset = ($page - 1) * $perPage;
+        $pagedItems = array_slice($allItems, $offset, $perPage);
+
+        // Join product names & units untuk items yang di-page.
+        if (!empty($pagedItems)) {
+            $pagedIds = array_column($pagedItems, 'product_id');
+            $products = DB::table('products')
+                ->leftJoin('units', 'products.unit_id', '=', 'units.id')
+                ->whereIn('products.id', $pagedIds)
+                ->select('products.id', 'products.name', 'units.unit')
+                ->get()
+                ->keyBy('id');
+            foreach ($pagedItems as &$it) {
+                $p = $products->get($it['product_id']);
+                $it['product_name'] = $p?->name;
+                $it['unit']         = $p?->unit;
+            }
+            unset($it);
+        }
+
+        // Summary counts.
+        $matchCount     = count(array_filter($allItems, fn($i) => $i['status'] === 'cocok'));
+        $mismatchCount  = count(array_filter($allItems, fn($i) => $i['status'] === 'selisih'));
+        $noSoCount      = count(array_filter($allItems, fn($i) => $i['status'] === 'no_so_data'));
+        $noStockCount   = count(array_filter($allItems, fn($i) => $i['status'] === 'no_stock_data'));
+        $totalSoldQty   = array_sum(array_map(fn($i) => $i['sold_qty'], $allItems));
+        $totalStockOutQty = array_sum(array_map(
+            fn($i) => ($i['stock_diff'] !== null && $i['stock_diff'] < 0) ? abs($i['stock_diff']) : 0,
+            $allItems
+        ));
 
         return response()->json([
             'success' => true,
@@ -85,21 +146,21 @@ class InventoryAnomalyController extends Controller
                     'store_ids' => $storeIds,
                 ],
                 'summary' => [
-                    'products_compared' => count($items),
-                    'match_count' => 0,
-                    'mismatch_count' => 0,
-                    'no_so_data_count' => 0,
-                    'no_stock_data_count' => 0,
+                    'products_compared' => $total,
+                    'match_count' => $matchCount,
+                    'mismatch_count' => $mismatchCount,
+                    'no_so_data_count' => $noSoCount,
+                    'no_stock_data_count' => $noStockCount,
                     'total_sold_qty' => $totalSoldQty,
                     'total_stock_out_qty' => $totalStockOutQty,
                 ],
-                'items' => $items,
+                'items' => array_values($pagedItems),
             ],
             'meta' => [
                 'current_page' => $page,
-                'last_page'    => 1,
+                'last_page'    => $lastPage,
                 'per_page'     => $perPage,
-                'total'        => count($items),
+                'total'        => $total,
             ],
         ]);
     }
