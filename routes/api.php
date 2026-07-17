@@ -180,6 +180,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // Inventory Anomaly Comparison (admin & super_admin only — guarded in controller)
     Route::get('/inventory-anomalies/compare', [\App\Http\Controllers\Api\InventoryAnomalyController::class, 'compare']);
 
+    // Sales Dashboard (admin & super_admin only — guarded in controller)
+    Route::get('/sales-dashboard', [\App\Http\Controllers\Api\SalesDashboardController::class, 'index']);
+
     Route::get('/utilities', [\App\Http\Controllers\Api\UtilityController::class, 'index']);
     Route::prefix('utility-usages')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\UtilityUsageController::class, 'index']);
