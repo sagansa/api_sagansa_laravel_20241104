@@ -94,16 +94,23 @@ class SalesDashboardController extends Controller
         };
     }
 
+    /**
+     * Base query: delivered sales orders (delivery_status=3, not soft-deleted)
+     * within the given date range. Use as starting point for all view queries.
+     */
+    private function deliveredSalesOrders(array $range): \Illuminate\Database\Query\Builder
+    {
+        return DB::table('sales_orders as so')
+            ->whereNull('so.deleted_at')
+            ->where('so.delivery_status', 3) // 3 = terkirim
+            ->whereBetween('so.delivery_date', [$range['from'], $range['to']]);
+    }
+
     private function summaryView(array $range): array
     {
-        $baseSo = DB::table('sales_orders as so')
-            ->whereNull('so.deleted_at')
-            ->where('so.delivery_status', 3)
-            ->whereBetween('so.delivery_date', [$range['from'], $range['to']]);
-
-        $omzet   = (clone $baseSo)->sum('so.total_price');
-        $orders  = (clone $baseSo)->count('so.id');
-        $qty     = (clone $baseSo)
+        $omzet   = $this->deliveredSalesOrders($range)->sum('so.total_price');
+        $orders  = $this->deliveredSalesOrders($range)->count('so.id');
+        $qty     = $this->deliveredSalesOrders($range)
             ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
             ->sum('dso.quantity');
 
@@ -119,10 +126,7 @@ class SalesDashboardController extends Controller
     {
         [$selectExpr, $interval, $allBuckets] = $this->trendConfig($periode);
 
-        $rows = DB::table('sales_orders')
-            ->whereNull('deleted_at')
-            ->where('delivery_status', 3)
-            ->whereBetween('delivery_date', [$range['from'], $range['to']])
+        $rows = $this->deliveredSalesOrders($range)
             ->selectRaw($selectExpr . " as bucket, SUM(total_price) as omzet")
             ->groupBy('bucket')
             ->orderBy('bucket')
@@ -170,26 +174,20 @@ class SalesDashboardController extends Controller
 
     private function productsView(array $range, int $page, int $perPage, string $sort): array
     {
-        $baseQuery = DB::table('detail_sales_orders as dso')
-            ->join('sales_orders as so', 'dso.sales_order_id', '=', 'so.id')
-            ->whereNull('so.deleted_at')
-            ->where('so.delivery_status', 3)
-            ->whereBetween('so.delivery_date', [$range['from'], $range['to']])
+        $baseQuery = $this->deliveredSalesOrders($range)
+            ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
             ->whereNotNull('dso.product_id')
             ->select(
                 'dso.product_id',
                 DB::raw('SUM(dso.quantity) as qty'),
                 DB::raw('SUM(dso.subtotal_price) as revenue')
             )
-            ->groupBy('dso.product_id');
+            ->groupBy('dso.product_id')
+            ->orderBy($sort === 'revenue' ? 'revenue' : 'qty', 'desc')
+            ->orderBy('dso.product_id', 'asc');
 
-        $baseQuery->orderBy($sort === 'revenue' ? 'revenue' : 'qty', 'desc');
-
-        $total = DB::table('detail_sales_orders as dso')
-            ->join('sales_orders as so', 'dso.sales_order_id', '=', 'so.id')
-            ->whereNull('so.deleted_at')
-            ->where('so.delivery_status', 3)
-            ->whereBetween('so.delivery_date', [$range['from'], $range['to']])
+        $total = $this->deliveredSalesOrders($range)
+            ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
             ->whereNotNull('dso.product_id')
             ->distinct()
             ->count('dso.product_id');
@@ -232,31 +230,33 @@ class SalesDashboardController extends Controller
 
     private function channelsView(array $range): array
     {
-        $rows = DB::table('sales_orders as so')
-            ->leftJoin('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
-            ->whereNull('so.deleted_at')
-            ->where('so.delivery_status', 3)
-            ->whereBetween('so.delivery_date', [$range['from'], $range['to']])
-            ->select(
-                'so.for',
-                DB::raw('COUNT(DISTINCT so.id) as order_count'),
-                DB::raw('SUM(so.total_price) as omzet'),
-                DB::raw('SUM(dso.quantity) as qty')
-            )
+        // Omzet + order_count per channel — NO detail join (avoid fan-out).
+        $omzetRows = $this->deliveredSalesOrders($range)
+            ->select('so.for', DB::raw('COUNT(*) as order_count'), DB::raw('SUM(so.total_price) as omzet'))
             ->groupBy('so.for')
-            ->get();
+            ->get()
+            ->keyBy('for');
+
+        // Qty per channel — detail join is safe here.
+        $qtyRows = $this->deliveredSalesOrders($range)
+            ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
+            ->select('so.for', DB::raw('SUM(dso.quantity) as qty'))
+            ->groupBy('so.for')
+            ->get()
+            ->keyBy('for');
 
         $labels = ['1' => 'Direct', '2' => 'Employee', '3' => 'Online'];
-        $totalOmzet = (int) $rows->sum(fn($r) => (int) $r->omzet);
+        $totalOmzet = (int) $omzetRows->sum(fn($r) => (int) $r->omzet);
 
-        $items = $rows->map(function ($r) use ($labels, $totalOmzet) {
-            $omzet = (int) $r->omzet;
+        $allFors = $omzetRows->keys()->merge($qtyRows->keys())->unique();
+        $items = $allFors->map(function ($for) use ($omzetRows, $qtyRows, $labels, $totalOmzet) {
+            $omzet = (int) ($omzetRows[$for]->omzet ?? 0);
             return [
-                'channel'       => $r->for,
-                'channel_label' => $labels[$r->for] ?? "Unknown ({$r->for})",
+                'channel'       => $for,
+                'channel_label' => $labels[$for] ?? "Unknown ({$for})",
                 'omzet'         => $omzet,
-                'order_count'   => (int) $r->order_count,
-                'qty'           => (int) $r->qty ?: 0,
+                'order_count'   => (int) ($omzetRows[$for]->order_count ?? 0),
+                'qty'           => (int) ($qtyRows[$for]->qty ?? 0),
                 'percentage'    => $totalOmzet > 0 ? round(($omzet / $totalOmzet) * 100, 1) : 0.0,
             ];
         })->values();
