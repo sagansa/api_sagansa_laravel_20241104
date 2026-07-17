@@ -360,18 +360,21 @@ class PresenceController extends Controller
                 }
             }
 
-            // Validasi Kebersihan Toko - tidak wajib (opsional)
-            // $hasHygiene = \App\Models\Hygiene::where('created_by_id', $presenceUserId)
-            //     ->whereDate('created_at', $now->toDateString())
-            //     ->exists();
-            //
-            // if (!$hasHygiene) {
-            //     return response()->json([
-            //         'status' => 'error',
-            //         'message' => 'Anda wajib mengisi form Kebersihan Toko sebelum Check-in.',
-            //         'error_code' => 'HYGIENE_REQUIRED'
-            //     ], 400);
-            // }
+            // Validasi Kebersihan Toko - wajib diisi untuk toko yang di-check-in
+            // sebelum Check-in. Cukup satu laporan per toko per hari
+            // (boleh dibuat oleh user lain di toko yang sama).
+            $hygieneStoreId = $request->input('store_id');
+            $hasHygiene = \App\Models\Hygiene::where('store_id', $hygieneStoreId)
+                ->whereDate('created_at', $now->toDateString())
+                ->exists();
+
+            if (!$hasHygiene) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Toko ini wajib memiliki laporan Kebersihan Toko hari ini sebelum Check-in.',
+                    'error_code' => 'HYGIENE_REQUIRED'
+                ], 400);
+            }
 
             // Validasi input
             $validationRules = [
@@ -547,6 +550,48 @@ class PresenceController extends Controller
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Anda harus berada dalam area store untuk melakukan check-out'
+                ], 400);
+            }
+
+            // Validasi Kebersihan Toko & Utility Usage wajib sebelum Check-out
+            // untuk toko yang di-checkout (cukup satu laporan per toko per hari).
+            $checkoutStoreId = $nearbyStore->id;
+
+            $hasHygiene = \App\Models\Hygiene::where('store_id', $checkoutStoreId)
+                ->whereDate('created_at', $now->toDateString())
+                ->exists();
+
+            if (!$hasHygiene) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Toko ini wajib memiliki laporan Kebersihan Toko hari ini sebelum Check-out.',
+                    'error_code' => 'HYGIENE_REQUIRED'
+                ], 400);
+            }
+
+            $hasUtilityUsage = \App\Models\UtilityUsage::whereHas('utility', function ($q) use ($checkoutStoreId) {
+                    $q->where('store_id', $checkoutStoreId);
+                })
+                ->whereDate('created_at', $now->toDateString())
+                ->exists();
+
+            if (!$hasUtilityUsage) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Toko ini wajib memiliki laporan Utility Usage hari ini sebelum Check-out.',
+                    'error_code' => 'UTILITY_USAGE_REQUIRED'
+                ], 400);
+            }
+
+            $hasStorageStock = \App\Models\StorageStock::where('store_id', $checkoutStoreId)
+                ->whereDate('created_at', $now->toDateString())
+                ->exists();
+
+            if (!$hasStorageStock) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Toko ini wajib memiliki laporan Storage Stock hari ini sebelum Check-out.',
+                    'error_code' => 'STORAGE_STOCK_REQUIRED'
                 ], 400);
             }
 
