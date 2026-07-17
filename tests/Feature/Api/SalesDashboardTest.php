@@ -123,4 +123,57 @@ class SalesDashboardTest extends TestCase
             $res->assertOk()->assertJsonPath('data.periode', $p);
         }
     }
+
+    public function test_summary_aggregates_three_kpis_correctly(): void
+    {
+        $admin = $this->adminOrSkip();
+        $store = \App\Models\Store::first();
+        if (!$store) {
+            $this->markTestSkipped('Need at least 1 store');
+        }
+
+        $today = now()->format('Y-m-d');
+        foreach ([['total' => 100000, 'qty' => 5], ['total' => 50000, 'qty' => 2]] as $so) {
+            $soId = \DB::table('sales_orders')->insertGetId([
+                'for' => '3', 'delivery_date' => $today, 'store_id' => $store->id,
+                'delivery_status' => 3, 'payment_status' => 1, 'total_price' => $so['total'],
+                'ordered_by_id' => 1, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            \DB::table('detail_sales_orders')->insert([
+                'product_id' => 1, 'quantity' => $so['qty'], 'unit_price' => 1000,
+                'subtotal_price' => 1000 * $so['qty'], 'sales_order_id' => $soId,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=today&view=summary');
+
+        $res->assertOk()
+            ->assertJsonPath('data.omzet', 150000)
+            ->assertJsonPath('data.order_count', 2)
+            ->assertJsonPath('data.total_qty', 7);
+    }
+
+    public function test_summary_excludes_non_delivered_orders(): void
+    {
+        $admin = $this->adminOrSkip();
+        $store = \App\Models\Store::first();
+        if (!$store) {
+            $this->markTestSkipped('Need at least 1 store');
+        }
+
+        $today = now()->format('Y-m-d');
+        \DB::table('sales_orders')->insert([
+            'for' => '3', 'delivery_date' => $today, 'store_id' => $store->id,
+            'delivery_status' => 1, 'payment_status' => 1, 'total_price' => 999999,
+            'ordered_by_id' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/sales-dashboard?periode=today&view=summary');
+
+        $res->assertOk();
+        $this->assertNotEquals(999999, $res->json('data.omzet'));
+    }
 }

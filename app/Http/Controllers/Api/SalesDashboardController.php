@@ -96,7 +96,23 @@ class SalesDashboardController extends Controller
 
     private function summaryView(array $range): array
     {
-        return ['periode_label' => $range['label'], 'omzet' => 0, 'order_count' => 0, 'total_qty' => 0];
+        $baseSo = DB::table('sales_orders as so')
+            ->whereNull('so.deleted_at')
+            ->where('so.delivery_status', 3)
+            ->whereBetween('so.delivery_date', [$range['from'], $range['to']]);
+
+        $omzet   = (clone $baseSo)->sum('so.total_price');
+        $orders  = (clone $baseSo)->count('so.id');
+        $qty     = (clone $baseSo)
+            ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
+            ->sum('dso.quantity');
+
+        return [
+            'periode_label' => $range['label'],
+            'omzet'         => (int) $omzet,
+            'order_count'   => (int) $orders,
+            'total_qty'     => (int) $qty,
+        ];
     }
 
     private function trendView(array $range, string $periode): array
