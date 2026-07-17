@@ -131,4 +131,39 @@ class InventoryAnomalyCompareTest extends TestCase
 
         $res->assertOk()->assertJsonPath('meta.per_page', 200);
     }
+
+    public function test_sold_qty_aggregates_multiple_orders_for_same_product(): void
+    {
+        $admin = $this->adminOrSkip();
+        $productId = \DB::table('products')->value('id');
+        if ($productId === null) {
+            $this->markTestSkipped('No products in DB');
+        }
+        $store = Store::first();
+        if (!$store) {
+            $this->markTestSkipped('Need at least 1 store');
+        }
+
+        $today = now()->toDateString();
+        foreach ([5, 7] as $qty) {
+            $soId = \DB::table('sales_orders')->insertGetId([
+                'for' => '3', 'delivery_date' => $today, 'store_id' => $store->id,
+                'delivery_status' => 3, 'payment_status' => 1, 'total_price' => 0,
+                'ordered_by_id' => 1, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            \DB::table('detail_sales_orders')->insert([
+                'product_id' => $productId, 'quantity' => $qty, 'unit_price' => 1000,
+                'subtotal_price' => 1000 * $qty, 'sales_order_id' => $soId,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/inventory-anomalies/compare?date_from=' . $today . '&date_to=' . $today);
+
+        $res->assertOk();
+        $item = collect($res->json('data.items'))->firstWhere('product_id', $productId);
+        $this->assertNotNull($item, 'Product should appear in items');
+        $this->assertEquals(12, $item['sold_qty']);
+    }
 }
