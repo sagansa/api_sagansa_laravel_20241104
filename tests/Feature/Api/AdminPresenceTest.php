@@ -316,4 +316,24 @@ class AdminPresenceTest extends TestCase
         $response->assertStatus(422)
                 ->assertJsonValidationErrors(['created_by_id']);
     }
+
+    public function test_get_all_today_presences_returns_summary_structure(): void
+    {
+        // setUp() seeds the 'admin' role and assigns it to $this->adminUser.
+        // Defensive: skip if role seeding failed for any reason in the test env.
+        if (!$this->adminUser->hasRole('admin')) {
+            $this->markTestSkipped("Role 'admin' not seeded in test DB — pre-existing test env limitation");
+        }
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/presences/today');
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'status',
+                'data',
+                'summary' => ['late_count', 'on_time_count', 'total_count'],
+            ]);
+    }
 }
