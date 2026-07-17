@@ -12,7 +12,7 @@ class InventoryAnomalyController extends Controller
     public function compare(Request $request)
     {
         $user = $request->user();
-        if (!$user || (!$user->hasRole('admin') && !$user->hasRole('super_admin'))) {
+        if (!$user || !$user->hasAnyRole(['admin', 'super_admin'])) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized',
@@ -67,15 +67,7 @@ class InventoryAnomalyController extends Controller
             $stockOut = ($diff !== null && $diff < 0) ? abs($diff) : 0;
             $delta = $diff !== null ? ($sold - $stockOut) : null;
 
-            if ($sold > 0 && $diff === null) {
-                $status = 'no_stock_data';
-            } elseif ($sold === 0 && $diff !== null && $diff !== 0) {
-                $status = 'no_so_data';
-            } elseif ($delta === 0) {
-                $status = 'cocok';
-            } else {
-                $status = 'selisih';
-            }
+            $status = $this->classifyStatus($sold, $diff, $delta);
 
             $allItems[] = [
                 'product_id'    => $pid,
@@ -199,7 +191,6 @@ class InventoryAnomalyController extends Controller
     private function buildStockMap(string $cutoff, array $storeIds): array
     {
         $storePlaceholders = '';
-        $bindings = [$cutoff];
         if (!empty($storeIds)) {
             $storePlaceholders = 'AND sc2.store_id IN (' . implode(',', array_fill(0, count($storeIds), '?')) . ') ';
             $bindings = array_merge([$cutoff], $storeIds, [$cutoff], $storeIds);
@@ -233,5 +224,28 @@ class InventoryAnomalyController extends Controller
             $map[(int) $r->product_id] = (int) $r->qty;
         }
         return $map;
+    }
+
+    /**
+     * Klasifikasi status anomali berdasarkan sold qty dan diff stok.
+     *
+     * Aturan prioritas:
+     *  - sold > 0, tidak ada snapshot stok → no_stock_data
+     *  - sold = 0, ada pergerakan stok (diff != null && != 0) → no_so_data
+     *  - delta = 0 (sold == stock_out) → cocok
+     *  - selain itu → selisih
+     */
+    private function classifyStatus(int $sold, ?int $diff, ?int $delta): string
+    {
+        if ($sold > 0 && $diff === null) {
+            return 'no_stock_data';
+        }
+        if ($sold === 0 && $diff !== null && $diff !== 0) {
+            return 'no_so_data';
+        }
+        if ($delta === 0) {
+            return 'cocok';
+        }
+        return 'selisih';
     }
 }
