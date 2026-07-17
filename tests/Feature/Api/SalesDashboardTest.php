@@ -66,4 +66,61 @@ class SalesDashboardTest extends TestCase
 
         $res->assertForbidden();
     }
+
+    public function test_default_periode_is_today_and_view_is_summary(): void
+    {
+        Sanctum::actingAs($this->adminOrSkip());
+
+        $res = $this->getJson('/sales-dashboard');
+
+        $res->assertOk()
+            ->assertJsonPath('data.periode', 'today')
+            ->assertJsonPath('data.view', 'summary');
+    }
+
+    public function test_invalid_periode_returns_422(): void
+    {
+        Sanctum::actingAs($this->adminOrSkip());
+
+        $res = $this->getJson('/sales-dashboard?periode=foo');
+
+        $res->assertStatus(422);
+    }
+
+    public function test_invalid_view_returns_422(): void
+    {
+        Sanctum::actingAs($this->adminOrSkip());
+
+        $res = $this->getJson('/sales-dashboard?view=foo');
+
+        $res->assertStatus(422);
+    }
+
+    public function test_invalid_sort_returns_422(): void
+    {
+        Sanctum::actingAs($this->adminOrSkip());
+
+        $res = $this->getJson('/sales-dashboard?view=products&sort=foo');
+
+        $res->assertStatus(422);
+    }
+
+    public function test_per_page_clamped_to_200(): void
+    {
+        Sanctum::actingAs($this->adminOrSkip());
+
+        $res = $this->getJson('/sales-dashboard?view=products&per_page=9999');
+
+        $res->assertOk()->assertJsonPath('data.meta.per_page', 200);
+    }
+
+    public function test_accepts_all_four_periodes(): void
+    {
+        Sanctum::actingAs($this->adminOrSkip());
+
+        foreach (['today', 'yesterday', 'month', 'year'] as $p) {
+            $res = $this->getJson("/sales-dashboard?periode={$p}");
+            $res->assertOk()->assertJsonPath('data.periode', $p);
+        }
+    }
 }
