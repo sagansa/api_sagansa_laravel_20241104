@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use App\Support\BusinessDate;
 
 class StorageStockController extends Controller
 {
@@ -114,7 +115,9 @@ class StorageStockController extends Controller
             ], 422);
         }
 
-        $today = Carbon::now()->toDateString();
+        // Tanggal laporan mengikuti business date: laporan antara 22:00 tgl D-1
+        // s.d. 11:00 tgl D dihitung sebagai tgl D-1 (mis. 00:12 tgl 18 = tgl 17).
+        $today = BusinessDate::todayString();
 
         // Validasi Duplikasi: Hanya 1 kali sehari untuk store yang sama
         $existingReport = RemainingStorage::where('for', 'remaining_storage')
@@ -169,7 +172,9 @@ class StorageStockController extends Controller
      */
     public function todayStatus(Request $request)
     {
-        $today = Carbon::now('Asia/Jakarta')->toDateString();
+        // Samakan dengan business date agar pengecekan "sudah lapor hari ini"
+        // konsisten dengan tanggal yang disimpan saat store() (jam < 11 = hari sebelumnya).
+        $today = BusinessDate::todayString();
 
         $totalStores = \App\Models\Store::where('status', '<>', '8')->count();
         $reportedStores = RemainingStorage::where('for', 'remaining_storage')

@@ -150,7 +150,7 @@ class HygieneController extends Controller
             $hygieneOfRoom = HygieneOfRoom::create([
                 'hygiene_id' => $hygiene->id,
                 'room_id' => $roomData['room_id'],
-                'image' => $imagePath,
+                'image' => $imagePath ? (is_array($imagePath) ? $imagePath : [$imagePath]) : null,
                 'condition' => $roomData['condition'] ?? null,
                 'notes' => $roomData['notes'] ?? null,
             ]);
