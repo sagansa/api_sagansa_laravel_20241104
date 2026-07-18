@@ -208,4 +208,53 @@ class HygieneController extends Controller
             ->first();
         return $presence?->store_id;
     }
+
+    /**
+     * Nilai laporan kebersihan secara utuh (approve/reject).
+     * Hanya admin/super_admin. status: 2 = disetujui, 3 = ditolak.
+     */
+    public function updateStatus(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user || !$user->hasAnyRole(['admin', 'super_admin'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Akses ditolak.',
+            ], 403);
+        }
+
+        $hygiene = Hygiene::findOrFail($id);
+
+        $validator = Validator::make($request->all(), [
+            'status' => 'required|integer|in:2,3',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $hygiene->update([
+            'status' => $request->input('status'),
+            'approved_by_id' => $user->id,
+        ]);
+
+        $hygiene->load([
+            'store:id,nickname',
+            'hygieneOfRooms.room:id,name',
+            'createdBy:id,name',
+            'approvedBy:id,name',
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $request->input('status') == 2
+                ? 'Laporan kebersihan disetujui'
+                : 'Laporan kebersihan ditolak',
+            'data' => $hygiene,
+        ]);
+    }
 }
