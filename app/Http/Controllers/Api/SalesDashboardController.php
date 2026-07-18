@@ -26,6 +26,7 @@ class SalesDashboardController extends Controller
             'per_page'=> ['nullable', 'integer', 'min:1', 'max:200'],
             'sort'    => ['nullable', 'in:qty,revenue'],
             'compare_year' => ['nullable', 'integer', 'digits:4', 'between:2000,' . date('Y')],
+            'metric'  => ['nullable', 'in:omzet,order,qty'],
         ]);
 
         $periode = $validated['periode'] ?? 'today';
@@ -33,6 +34,7 @@ class SalesDashboardController extends Controller
         $page    = max(1, (int) ($validated['page'] ?? 1));
         $perPage = min(max(1, (int) ($validated['per_page'] ?? 50)), 200);
         $sort    = $validated['sort']    ?? 'qty';
+        $metric  = $validated['metric']  ?? 'omzet';
 
         $compareYearRaw = $validated['compare_year'] ?? null;
         $compareYear = null;
@@ -57,8 +59,8 @@ class SalesDashboardController extends Controller
             'trend'    => response()->json([
                 'success' => true,
                 'data'    => array_merge(
-                    ['view' => 'trend', 'periode' => $periode],
-                    $this->trendView($range, $periode, $compareYear),
+                    ['view' => 'trend', 'periode' => $periode, 'metric' => $metric],
+                    $this->trendView($range, $periode, $compareYear, $metric),
                 ),
             ]),
             'products' => response()->json([
@@ -125,20 +127,117 @@ class SalesDashboardController extends Controller
             ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
             ->sum('dso.quantity');
 
+        // Pembanding periode natural (today↔kemarin, month↔bulan lalu paralel, dst).
+        [$prevRange, $prevLabel] = $this->resolvePrevRangeNatural($range['from'], $range['to']);
+        $prevOmzet  = $this->deliveredSalesOrders($prevRange)->sum('so.total_price');
+        $prevOrders = $this->deliveredSalesOrders($prevRange)->count('so.id');
+        $prevQty    = $this->deliveredSalesOrders($prevRange)
+            ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
+            ->sum('dso.quantity');
+
         return [
-            'periode_label' => $range['label'],
-            'omzet'         => (int) $omzet,
-            'order_count'   => (int) $orders,
-            'total_qty'     => (int) $qty,
+            'periode_label'   => $range['label'],
+            'omzet'           => (int) $omzet,
+            'order_count'     => (int) $orders,
+            'total_qty'       => (int) $qty,
+            'omzet_prev'      => (int) $prevOmzet,
+            'order_count_prev'=> (int) $prevOrders,
+            'total_qty_prev'  => (int) $prevQty,
+            'prev_label'      => $prevLabel,
         ];
     }
 
-    private function trendView(array $range, string $periode, ?int $compareYear): array
+    /**
+     * Hitung range & label pembanding KPI berdasarkan durasi range asli.
+     * Deteksi via selisih hari & posisi `from` (bukan string periode):
+     * - 1 hari & from == hari ini → kemarin (full day)
+     * - 1 hari & from == kemarin → H-2 (full day)
+     * - bulan berjalan (from awal bulan s/d hari ini) → bulan lalu tgl 1..N paralel
+     * - tahun berjalan (from awal tahun s/d hari ini) → tahun lalu 1 Jan..tgl/bulan sama
+     *
+     * Apple-to-apple untuk month/year: prev hanya s/d hari/bulan yang sama
+     * (mis. 18 Jul tahun ini vs 18 Jul tahun lalu) — bukan full month/year lalu.
+     */
+    private function resolvePrevRangeNatural(string $fromStr, string $toStr): array
+    {
+        $from = Carbon::parse($fromStr, 'Asia/Jakarta');
+        $to   = Carbon::parse($toStr, 'Asia/Jakarta');
+        $now  = Carbon::now('Asia/Jakarta');
+
+        $dayDiff = $from->copy()->startOfDay()->diffInDays($to->copy()->startOfDay());
+
+        // Kasus 1 & 2: range 1 hari → kemarin / H-2.
+        if ($dayDiff === 0) {
+            $isToday = $from->isSameDay($now);
+            $prevDate = $isToday ? $now->copy()->subDay() : $from->copy()->subDay();
+            return [
+                [
+                    'from'  => $prevDate->copy()->startOfDay()->toDateTimeString(),
+                    'to'    => $prevDate->copy()->endOfDay()->toDateTimeString(),
+                    'label' => $prevDate->format('d M Y'),
+                ],
+                $isToday ? 'Kemarin' : $prevDate->format('d M Y'),
+            ];
+        }
+
+        // Kasus 3: bulan berjalan → bulan lalu paralel (tgl 1..N bulan lalu).
+        $isMonthRange = $from->isSameDay($from->copy()->startOfMonth()->startOfDay())
+            && $to->isSameDay($now);
+        if ($isMonthRange) {
+            $toDay = (int) $to->format('d');
+            $prevMonth = $to->copy()->subMonth();
+            $lastDayPrev = (int) $prevMonth->copy()->endOfMonth()->format('d');
+            $effectiveDay = min($toDay, $lastDayPrev); // clamp utk Februari dll.
+            return [
+                [
+                    'from'  => $prevMonth->copy()->startOfMonth()->startOfDay()->toDateTimeString(),
+                    'to'    => $prevMonth->copy()->day($effectiveDay)->endOfDay()->toDateTimeString(),
+                    'label' => $prevMonth->format('M Y'),
+                ],
+                $prevMonth->format('M Y') . ' (s/d tgl ' . $effectiveDay . ')',
+            ];
+        }
+
+        // Kasus 4: tahun berjalan → tahun lalu paralel (1 Jan s/d tgl/bulan sama).
+        $isYearRange = $from->isSameDay($from->copy()->startOfYear()->startOfDay())
+            && $to->isSameDay($now);
+        if ($isYearRange) {
+            $prevYear = $to->copy()->subYear();
+            return [
+                [
+                    'from'  => $prevYear->copy()->startOfYear()->startOfDay()->toDateTimeString(),
+                    'to'    => $prevYear->copy()->endOfDay()->toDateTimeString(),
+                    'label' => $prevYear->format('Y'),
+                ],
+                $prevYear->format('Y') . ' (s/d ' . $prevYear->format('d M') . ')',
+            ];
+        }
+
+        // Fallback: shift mundur sesuai durasi (jarang terpakai, jaga-jaga).
+        $prevFrom = $from->copy()->subSeconds($from->diffInSeconds($to) + 1)->startOfDay();
+        $prevTo = $from->copy()->subSecond()->endOfDay();
+        return [
+            [
+                'from'  => $prevFrom->toDateTimeString(),
+                'to'    => $prevTo->toDateTimeString(),
+                'label' => $prevFrom->format('d M Y') . '–' . $prevTo->format('d M Y'),
+            ],
+            $prevFrom->format('d M Y') . '–' . $prevTo->format('d M Y'),
+        ];
+    }
+
+    private function trendView(array $range, string $periode, ?int $compareYear, string $metric = 'omzet'): array
     {
         [$selectExpr, $interval, $allBuckets] = $this->trendConfig($periode);
+        $valueExpr = $this->metricExpr($metric);
+        $needsJoin = $metric === 'qty'; // qty butuh join ke detail_sales_orders
 
-        $rows = $this->deliveredSalesOrders($range)
-            ->selectRaw($selectExpr . " as bucket, SUM(total_price) as omzet")
+        $currentQuery = $this->deliveredSalesOrders($range);
+        if ($needsJoin) {
+            $currentQuery->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id');
+        }
+        $rows = $currentQuery
+            ->selectRaw($selectExpr . " as bucket, {$valueExpr} as value")
             ->groupBy('bucket')
             ->orderBy('bucket')
             ->get()
@@ -149,8 +248,12 @@ class SalesDashboardController extends Controller
         $prevBuckets = [];
         if ($compareYear !== null) {
             [$prevRange, $prevBuckets] = $this->resolvePrevRangeAndBuckets($range, $periode, $compareYear);
-            $prevRows = $this->deliveredSalesOrders($prevRange)
-                ->selectRaw($selectExpr . " as bucket, SUM(total_price) as omzet")
+            $prevQuery = $this->deliveredSalesOrders($prevRange);
+            if ($needsJoin) {
+                $prevQuery->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id');
+            }
+            $prevRows = $prevQuery
+                ->selectRaw($selectExpr . " as bucket, {$valueExpr} as value")
                 ->groupBy('bucket')
                 ->orderBy('bucket')
                 ->get()
@@ -161,21 +264,35 @@ class SalesDashboardController extends Controller
         $points = collect($allBuckets)->map(function ($bucket, $i) use ($rows, $prevRows, $prevBuckets, $hasCompare) {
             $point = [
                 'label' => $bucket,
-                'omzet' => (int) ($rows[$bucket]->omzet ?? 0),
+                'value' => (int) ($rows[$bucket]->value ?? 0),
             ];
             if ($hasCompare) {
                 // Zip by ordinal index karena label tahun berbeda.
                 $prevBucket = $prevBuckets[$i] ?? null;
-                $point['omzet_prev'] = $prevBucket !== null ? (int) ($prevRows[$prevBucket]->omzet ?? 0) : 0;
+                $point['value_prev'] = $prevBucket !== null ? (int) ($prevRows[$prevBucket]->value ?? 0) : 0;
             }
             return $point;
         })->values();
 
         return [
             'interval'     => $interval,
+            'metric'       => $metric,
             'compare_year' => $compareYear,
             'points'       => $points,
         ];
+    }
+
+    /**
+     * Ekspresi SQL agregat untuk metrik trend. Konsisten dengan summaryView:
+     * omzet = SUM(so.total_price), order = COUNT(so.id), qty = SUM(dso.quantity).
+     */
+    private function metricExpr(string $metric): string
+    {
+        return match ($metric) {
+            'order' => 'COUNT(so.id)',
+            'qty'   => 'SUM(dso.quantity)',
+            default => 'SUM(so.total_price)', // 'omzet'
+        };
     }
 
     private function trendConfig(string $periode): array
@@ -330,9 +447,13 @@ class SalesDashboardController extends Controller
         $allFors = $omzetRows->keys()->merge($qtyRows->keys())->unique();
         $items = $allFors->map(function ($for) use ($omzetRows, $qtyRows, $labels, $totalOmzet) {
             $omzet = (int) ($omzetRows[$for]->omzet ?? 0);
+            // Kolom `sales_orders.for` (tinyint) bisa berupa int di production
+            // atau string di test factory. Normalisasi ke string supaya label
+            // lookup & kontrak JSON konsisten lintas environment.
+            $forKey = (string) $for;
             return [
-                'channel'       => $for,
-                'channel_label' => $labels[$for] ?? "Unknown ({$for})",
+                'channel'       => $forKey,
+                'channel_label' => $labels[$forKey] ?? "Unknown ({$forKey})",
                 'omzet'         => $omzet,
                 'order_count'   => (int) ($omzetRows[$for]->order_count ?? 0),
                 'qty'           => (int) ($qtyRows[$for]->qty ?? 0),
