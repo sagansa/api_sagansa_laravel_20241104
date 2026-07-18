@@ -36,7 +36,7 @@ class ReadinessController extends Controller
     {
         $user = Auth::user();
         $userId = $this->resolvePresenceUserId($user);
-        
+
         $today = Carbon::today();
         $readiness = Readiness::where('created_by_id', $userId)
             ->whereDate('created_at', $today)
@@ -48,6 +48,40 @@ class ReadinessController extends Controller
                 'has_submitted_today' => $readiness ? true : false,
                 'readiness' => $readiness
             ]
+        ]);
+    }
+
+    /**
+     * List seluruh kesiapan diri untuk role admin/super_admin.
+     *
+     * Menampilkan readiness semua user (bukan hanya milik sendiri) sehingga
+     * admin dapat memantau daftar kesiapan harian karyawan. Mendukung filter
+     * opsional ?date=YYYY-MM-DD (default hari ini).
+     */
+    public function adminIndex(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user || !$user->hasAnyRole(['admin', 'super_admin'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Akses ditolak.',
+            ], 403);
+        }
+
+        $date = $request->input('date');
+        $query = Readiness::with(['createdBy:id,name', 'store:id,nickname']);
+
+        if ($date) {
+            $query->whereDate('created_at', $date);
+        } else {
+            $query->whereDate('created_at', Carbon::today());
+        }
+
+        $readinesses = $query->orderBy('created_at', 'desc')->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $readinesses,
         ]);
     }
 

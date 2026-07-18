@@ -194,6 +194,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('readiness')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\ReadinessController::class, 'index']);
+        // Alias /history → index (mobile memanggil /readiness/history).
+        Route::get('/history', [\App\Http\Controllers\Api\ReadinessController::class, 'index']);
+        // List kesiapan seluruh user (admin/super_admin) — ?date=YYYY-MM-DD.
+        Route::get('/admin', [\App\Http\Controllers\Api\ReadinessController::class, 'adminIndex']);
         Route::get('/status', [\App\Http\Controllers\Api\ReadinessController::class, 'checkStatus']);
         Route::post('/', [\App\Http\Controllers\Api\ReadinessController::class, 'store']);
     });
