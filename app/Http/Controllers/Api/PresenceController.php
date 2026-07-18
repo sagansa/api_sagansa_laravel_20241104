@@ -583,8 +583,10 @@ class PresenceController extends Controller
                 ], 400);
             }
 
-            $hasStorageStock = \App\Models\StorageStock::where('store_id', $checkoutStoreId)
-                ->whereDate('created_at', $now->toDateString())
+            $today = \App\Support\BusinessDate::todayString();
+            $hasStorageStock = \App\Models\RemainingStorage::where('store_id', $checkoutStoreId)
+                ->where('for', 'remaining_storage')
+                ->where('date', $today)
                 ->exists();
 
             if (!$hasStorageStock) {
