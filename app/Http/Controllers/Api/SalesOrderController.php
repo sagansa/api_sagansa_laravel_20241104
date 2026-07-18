@@ -46,6 +46,7 @@ class SalesOrderController extends Controller
                     'sales_orders.received_by',
                     'sales_orders.image_delivery',
                     'sales_orders.image_payment',
+                    'sales_orders.total_price',
                     ...$paymentProofPrintColumns,
                     'stores.nickname as store_name',
                     'online_shop_providers.name as provider_name',
@@ -83,6 +84,8 @@ class SalesOrderController extends Controller
                 ->select([
                     'products.name as product_name',
                     'detail_sales_orders.quantity',
+                    'detail_sales_orders.unit_price',
+                    'detail_sales_orders.subtotal_price',
                     'units.unit as product_unit'
                 ])
                 ->get();
@@ -141,6 +144,7 @@ class SalesOrderController extends Controller
                 'sales_orders.received_by',
                 'sales_orders.image_delivery',
                 'sales_orders.image_payment',
+                'sales_orders.total_price',
                 ...$paymentProofPrintColumns,
                 'stores.nickname as store_name',
                 'online_shop_providers.name as provider_name',
@@ -174,6 +178,8 @@ class SalesOrderController extends Controller
                 ->select([
                     'products.name as product_name',
                     'detail_sales_orders.quantity',
+                    'detail_sales_orders.unit_price',
+                    'detail_sales_orders.subtotal_price',
                     'units.unit as product_unit'
                 ])
                 ->get();

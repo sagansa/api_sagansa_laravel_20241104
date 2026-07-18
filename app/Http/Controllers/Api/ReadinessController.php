@@ -71,10 +71,9 @@ class ReadinessController extends Controller
         $date = $request->input('date');
         $query = Readiness::with(['createdBy:id,name']);
 
+        // Tanpa filter ?date= -> tampilkan semua laporan (tidak dibatasi hari ini).
         if ($date) {
             $query->whereDate('created_at', $date);
-        } else {
-            $query->whereDate('created_at', Carbon::today());
         }
 
         $readinesses = $query->orderBy('created_at', 'desc')->get();

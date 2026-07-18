@@ -183,6 +183,28 @@ Route::middleware('auth:sanctum')->group(function () {
     // Sales Dashboard (admin & super_admin only — guarded in controller)
     Route::get('/sales-dashboard', [\App\Http\Controllers\Api\SalesDashboardController::class, 'index']);
 
+    // Production & Recipes (admin & super_admin only — guarded in controller).
+    // Mobile fokus ke operasional produksi (create/list/apply), master resep
+    // dikelola via apps/admin Filament — endpoint recipe di sini read-only.
+    Route::prefix('recipes')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\RecipeController::class, 'index']);
+        // by-product didefinisikan SEBELUM {id} agar tidak tertangkap wildcard.
+        Route::get('/by-product/{productId}', [\App\Http\Controllers\Api\RecipeController::class, 'byProduct']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\RecipeController::class, 'show']);
+    });
+
+    Route::prefix('productions')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\ProductionController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\ProductionController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\ProductionController::class, 'show']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\ProductionController::class, 'update']);
+        Route::post('/{id}/items', [\App\Http\Controllers\Api\ProductionController::class, 'addItem']);
+        Route::put('/{id}/items/{itemId}', [\App\Http\Controllers\Api\ProductionController::class, 'updateItem']);
+        Route::delete('/{id}/items/{itemId}', [\App\Http\Controllers\Api\ProductionController::class, 'deleteItem']);
+        Route::post('/{id}/apply', [\App\Http\Controllers\Api\ProductionController::class, 'apply']);
+        Route::post('/{id}/revert', [\App\Http\Controllers\Api\ProductionController::class, 'revert']);
+    });
+
     Route::get('/utilities', [\App\Http\Controllers\Api\UtilityController::class, 'index']);
     Route::prefix('utility-usages')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\UtilityUsageController::class, 'index']);
