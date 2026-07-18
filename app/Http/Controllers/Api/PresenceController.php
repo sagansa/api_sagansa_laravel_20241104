@@ -764,11 +764,12 @@ class PresenceController extends Controller
                 $query->where('created_by_id', $presenceUserId);
             })
             ->when($user->hasRole('admin') || $user->hasRole('super_admin'), function ($query) {
-                // Admin: hanya presensi milik user ber-peran staff/former-employee.
-                // Konsisten dengan numerator card home_page dan method monthly().
-                // created_by_id merujuk presence-DB → resolve via email dari auth-DB.
+                // Admin: hanya presensi milik user ber-peran staff (tanpa
+                // former-employee). Konsisten dengan denominator card home_page
+                // (UserService.getUsers(role:'staff')). created_by_id merujuk
+                // presence-DB → resolve via email dari auth-DB.
                 $staffUsers = \App\Models\User::whereHas('roles', function ($q) {
-                    $q->whereIn('name', ['staff', 'former-employee']);
+                    $q->where('name', 'staff');
                 })->get(['id', 'email']);
 
                 $presenceUserIds = [];
