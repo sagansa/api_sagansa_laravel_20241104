@@ -69,7 +69,7 @@ class ReadinessController extends Controller
         }
 
         $date = $request->input('date');
-        $query = Readiness::with(['createdBy:id,name', 'store:id,nickname']);
+        $query = Readiness::with(['createdBy:id,name']);
 
         if ($date) {
             $query->whereDate('created_at', $date);
