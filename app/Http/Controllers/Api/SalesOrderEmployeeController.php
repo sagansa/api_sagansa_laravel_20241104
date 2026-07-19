@@ -30,12 +30,21 @@ class SalesOrderEmployeeController extends Controller
 {
     private const FOR = '2';
 
-    /** Relasi yang selalu di-eager-load supaya response self-contained. */
+    /**
+     * Relasi yang selalu di-eager-load supaya response self-contained.
+     *
+     * Catatan: hanya boleh memilih kolom FISIK di tabel. Accessor model
+     * (mis. `transfer_name`, `delivery_address_name`) TIDAK boleh disebut
+     * di sini — itu bukan kolom DB, sehingga query akan gagal
+     * "Unknown column". Accessor tetap dihitung saat serialize.
+     */
     private const WITH = [
         'store:id,nickname',
         'orderedBy:id,name',
-        'transferToAccount:id,transfer_name',
-        'deliveryAddress:id,delivery_address_name',
+        'transferToAccount:id,name,number,bank_id',
+        'transferToAccount.bank:id,name',
+        'deliveryAddress:id,name,recipient_name,recipient_telp_no,address',
+        'detailSalesOrders:id,sales_order_id,product_id,quantity,unit_price,subtotal_price',
         'detailSalesOrders.product:id,name,unit_id',
         'detailSalesOrders.product.unit:id,unit',
     ];
