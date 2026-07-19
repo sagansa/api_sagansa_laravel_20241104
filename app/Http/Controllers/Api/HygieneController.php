@@ -95,6 +95,31 @@ class HygieneController extends Controller
 
     public function store(Request $request)
     {
+        // === DEBUG TEMPORER — tangkap error submit kebersihan (hapus setelah root cause ketemu) ===
+        try {
+            return $this->_storeImpl($request);
+        } catch (\Throwable $e) {
+            \Log::error('HygieneController::store FAILED', [
+                'user_id' => $request->user()?->id,
+                'payload' => $request->all(),
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal submit: ' . $e->getMessage(),
+                'debug_exception' => get_class($e),
+                'debug_file' => $e->getFile() . ':' . $e->getLine(),
+            ], 500);
+        }
+    }
+
+    private function _storeImpl(Request $request)
+    {
+        // === (akhir debug temporer) ===
+
         $user = $request->user();
         $userId = $user->id;
         $today = Carbon::today();

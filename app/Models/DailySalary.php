@@ -43,6 +43,16 @@ class DailySalary extends Model
         return $this->belongsTo(Presence::class);
     }
 
+    /**
+     * Alias user() untuk compatibility — beberapa controller/API consumer
+     * (mis. ClosingStoreController@show) eager-load 'dailySalaries.user'.
+     * Secara semantik sama dengan createdBy() (user yang input daily salary).
+     */
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by_id');
