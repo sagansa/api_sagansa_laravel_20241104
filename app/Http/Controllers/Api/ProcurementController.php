@@ -398,6 +398,8 @@ class ProcurementController extends Controller
             'items.*.detail_request_id' => 'required|exists:detail_requests,id',
             'items.*.price' => 'required|numeric|min:0',
             'items.*.quantity' => 'required|numeric|min:1',
+            'request_ids' => 'nullable|array',
+            'request_ids.*' => 'integer|exists:request_purchases,id',
         ]);
 
         $requestPurchase = RequestPurchase::find($id);
@@ -409,18 +411,33 @@ class ProcurementController extends Controller
             ], 404);
         }
 
+        // Kumpulkan request-id yang diizinkan untuk item lintas-request.
+        // Default: hanya request dari URL ($id). Bila frontend mengirim
+        // 'request_ids', item boleh berasal dari request mana pun di dalamnya
+        // (selama berasal dari store yang sama & status disetujui).
+        $allowedRequestIds = collect($request->input('request_ids', []));
+        if ($allowedRequestIds->isEmpty()) {
+            $allowedRequestIds = collect([$id]);
+        }
+
         $detailRequestIds = collect($request->items)->pluck('detail_request_id');
 
-        // Verify all items belong to this request and are approved
-        $validItems = DetailRequest::whereIn('id', $detailRequestIds)
-            ->where('request_purchase_id', $id)
+        // Verifikasi item: disetujui (status 4) DAN milik salah satu request
+        // yang diizinkan DAN store-nya sama dengan request utama.
+        $validItems = DetailRequest::with('requestPurchase')
+            ->whereIn('id', $detailRequestIds)
             ->where('status', '4')
-            ->get();
+            ->whereIn('request_purchase_id', $allowedRequestIds)
+            ->get()
+            ->filter(function ($dr) use ($requestPurchase) {
+                return $dr->requestPurchase
+                    && $dr->requestPurchase->store_id == $requestPurchase->store_id;
+            });
 
         if ($validItems->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Item yang dipilih tidak valid atau belum disetujui.'
+                'message' => 'Item yang dipilih tidak valid, belum disetujui, atau bukan dari toko yang sama.'
             ], 400);
         }
 
