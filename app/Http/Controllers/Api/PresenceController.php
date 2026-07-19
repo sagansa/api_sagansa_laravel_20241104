@@ -553,21 +553,9 @@ class PresenceController extends Controller
                 ], 400);
             }
 
-            // Validasi Kebersihan Toko & Utility Usage wajib sebelum Check-out
+            // Validasi Utility Usage wajib sebelum Check-out
             // untuk toko yang di-checkout (cukup satu laporan per toko per hari).
             $checkoutStoreId = $nearbyStore->id;
-
-            $hasHygiene = \App\Models\Hygiene::where('store_id', $checkoutStoreId)
-                ->whereDate('created_at', $now->toDateString())
-                ->exists();
-
-            if (!$hasHygiene) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Toko ini wajib memiliki laporan Kebersihan Toko hari ini sebelum Check-out.',
-                    'error_code' => 'HYGIENE_REQUIRED'
-                ], 400);
-            }
 
             $hasUtilityUsage = \App\Models\UtilityUsage::whereHas('utility', function ($q) use ($checkoutStoreId) {
                     $q->where('store_id', $checkoutStoreId);
