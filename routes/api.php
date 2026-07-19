@@ -110,6 +110,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/sales-orders/online-products', [\App\Http\Controllers\Api\SalesOrderController::class, 'onlineProducts']);
     Route::post('/sales-orders/online', [\App\Http\Controllers\Api\SalesOrderController::class, 'storeOnline']);
 
+    // Sales Order Employee (for=2) — penjualan oleh sales.
+    // Role guard di controller: sales = CRUD milik sendiri, admin = list semua +
+    // set payment_status + hapus (tidak bisa create).
+    Route::prefix('sales-orders/employee')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\SalesOrderEmployeeController::class, 'index']);
+        // supporting-data harus didaftarkan sebelum /{id} supaya tidak
+        // ditangkap sebagai path param.
+        Route::get('/supporting-data', [\App\Http\Controllers\Api\SalesOrderEmployeeController::class, 'supportingData']);
+        Route::post('/', [\App\Http\Controllers\Api\SalesOrderEmployeeController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\SalesOrderEmployeeController::class, 'show']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\SalesOrderEmployeeController::class, 'update']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\SalesOrderEmployeeController::class, 'destroy']);
+        Route::patch('/{id}/payment', [\App\Http\Controllers\Api\SalesOrderEmployeeController::class, 'updatePaymentStatus']);
+    });
+
     Route::prefix('leaves')->group(function () {
         Route::get('/', [LeaveController::class, 'index']);
         Route::post('/', [LeaveController::class, 'store']);
