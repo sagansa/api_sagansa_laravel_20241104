@@ -174,6 +174,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/payment-receipts/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showPaymentReceipt']);
         Route::get('/payment-receipts/{id}/qris', [\App\Http\Controllers\Api\ProcurementController::class, 'paymentReceiptQris']);
         Route::post('/payment-receipts', [\App\Http\Controllers\Api\ProcurementController::class, 'storePaymentReceipt']);
+        Route::post('/fuel-service-payment-receipts', [\App\Http\Controllers\Api\ProcurementController::class, 'storeFuelServicePaymentReceipt']);
     });
 
     Route::prefix('storage-stocks')->group(function () {

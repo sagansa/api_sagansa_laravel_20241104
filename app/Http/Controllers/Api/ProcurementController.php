@@ -10,6 +10,7 @@ use App\Models\DetailInvoice;
 use App\Models\Product;
 use App\Models\Asset;
 use App\Models\PaymentReceipt;
+use App\Models\FuelService;
 use App\Services\QrisService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -796,6 +797,92 @@ class ProcurementController extends Controller
                 'success' => true,
                 'message' => 'Payment receipt berhasil dibuat.',
                 'data' => $receipt->load('invoicePurchases')
+            ], 201);
+        });
+    }
+
+    /**
+     * Create a new payment receipt for fuel services (transfer payment).
+     *
+     * Mirror dengan storePaymentReceipt (invoice) tapi untuk fuel_services.
+     * payment_for = '1' (FuelService).
+     */
+    public function storeFuelServicePaymentReceipt(Request $request)
+    {
+        $user = $request->user();
+        if ($user->hasRole('staff') || $user->hasRole('storage-staff')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk membuat bukti pembayaran (payment receipt).'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'fuel_service_ids' => 'required|array|min:1',
+            'fuel_service_ids.*' => 'exists:fuel_services,id',
+            'transfer_amount' => 'required|numeric|min:1',
+            'total_amount' => 'nullable|numeric|min:0',
+            'notes' => 'nullable|string|max:500',
+            'image' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $fuelServiceIds = $request->fuel_service_ids;
+
+        // Verify all fuel services are Transfer + pending (status=1).
+        $fuelServices = FuelService::whereIn('id', $fuelServiceIds)->get();
+        foreach ($fuelServices as $fs) {
+            if ($fs->status != '1') {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Bensin/Servis #{$fs->id} sudah dibayar atau tidak valid."
+                ], 400);
+            }
+            if ($fs->payment_type_id != 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Bensin/Servis #{$fs->id} bukan metode Transfer."
+                ], 400);
+            }
+        }
+
+        return DB::transaction(function () use ($request, $fuelServiceIds, $fuelServices) {
+            $totalAmount = $request->total_amount ?? $fuelServices->sum('amount');
+
+            $imagePath = null;
+            if ($request->filled('image')) {
+                $imagePath = $request->input('image');
+            }
+
+            $receipt = PaymentReceipt::create([
+                'payment_for' => '1', // FuelService
+                'total_amount' => (int) $totalAmount,
+                'transfer_amount' => (int) $request->transfer_amount,
+                'supplier_id' => null, // Fuel service tidak punya supplier
+                'user_id' => $request->user()->id,
+                'notes' => $request->notes,
+                'image' => $imagePath,
+            ]);
+
+            // Attach fuel services to receipt
+            $receipt->fuelServices()->attach($fuelServiceIds);
+
+            // Update fuel service status to paid (status='2')
+            foreach ($fuelServices as $fs) {
+                $fs->update(['status' => '2']);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment receipt berhasil dibuat.',
+                'data' => $receipt->load('fuelServices')
             ], 201);
         });
     }
