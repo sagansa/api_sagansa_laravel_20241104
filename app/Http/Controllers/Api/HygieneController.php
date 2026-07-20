@@ -56,6 +56,9 @@ class HygieneController extends Controller
         $user = $request->user();
         $isAdmin = $user->hasAnyRole(['admin', 'super_admin']);
 
+        $perPage = (int) $request->query('per_page', 15);
+        $perPage = min(max($perPage, 1), 50);
+
         $hygienes = Hygiene::with([
             'store:id,nickname',
             'hygieneOfRooms.room:id,name',
@@ -64,11 +67,17 @@ class HygieneController extends Controller
         ])
             ->when(!$isAdmin, fn ($q) => $q->where('created_by_id', $user->id))
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->paginate($perPage);
 
         return response()->json([
             'status' => 'success',
-            'data' => $hygienes,
+            'data' => $hygienes->items(),
+            'meta' => [
+                'current_page' => $hygienes->currentPage(),
+                'last_page' => $hygienes->lastPage(),
+                'per_page' => $hygienes->perPage(),
+                'total' => $hygienes->total(),
+            ],
         ]);
     }
 

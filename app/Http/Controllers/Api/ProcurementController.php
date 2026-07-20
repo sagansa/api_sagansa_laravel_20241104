@@ -10,6 +10,7 @@ use App\Models\DetailInvoice;
 use App\Models\Product;
 use App\Models\Asset;
 use App\Models\PaymentReceipt;
+use App\Models\DailySalary;
 use App\Models\FuelService;
 use App\Services\QrisService;
 use Illuminate\Http\Request;
@@ -731,8 +732,11 @@ class ProcurementController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'invoice_ids' => 'required|array|min:1',
+            'payment_for' => 'nullable|in:2,3',
+            'invoice_ids' => 'nullable|array|min:1',
             'invoice_ids.*' => 'exists:invoice_purchases,id',
+            'daily_salary_ids' => 'nullable|array|min:1',
+            'daily_salary_ids.*' => 'exists:daily_salaries,id',
             'transfer_amount' => 'required|numeric|min:1',
             'total_amount' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string|max:500',
@@ -745,6 +749,12 @@ class ProcurementController extends Controller
                 'message' => 'Validasi gagal.',
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        $paymentFor = $request->input('payment_for', '3');
+
+        if ($paymentFor === '2') {
+            return $this->storeDailySalaryPaymentReceipt($request);
         }
 
         $invoiceIds = $request->invoice_ids;
@@ -797,6 +807,67 @@ class ProcurementController extends Controller
                 'success' => true,
                 'message' => 'Payment receipt berhasil dibuat.',
                 'data' => $receipt->load('invoicePurchases')
+            ], 201);
+        });
+    }
+
+    /**
+     * Create a payment receipt untuk daily salary (transfer payment).
+     *
+     * payment_for = '2' (DailySalary). Daily salary harus status '3' (siap
+     * dibayar) dan metode Transfer, lalu di-update menjadi '2' (dibayar)
+     * setelah receipt dibuat (mirip invoice yang berubah payment_status).
+     */
+    private function storeDailySalaryPaymentReceipt(Request $request)
+    {
+        $dailySalaryIds = $request->daily_salary_ids;
+
+        $salaries = DailySalary::whereIn('id', $dailySalaryIds)->get();
+
+        foreach ($salaries as $salary) {
+            if ($salary->status != '3') {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Daily salary #{$salary->id} belum siap dibayar (status: {$salary->status})."
+                ], 400);
+            }
+            if ($salary->payment_type_id != 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Daily salary #{$salary->id} bukan metode Transfer."
+                ], 400);
+            }
+        }
+
+        return DB::transaction(function () use ($request, $dailySalaryIds, $salaries) {
+            $totalAmount = $request->total_amount ?? $salaries->sum('amount');
+
+            $imagePath = null;
+            if ($request->filled('image')) {
+                $imagePath = $request->input('image');
+            }
+
+            $receipt = PaymentReceipt::create([
+                'payment_for' => '2',
+                'total_amount' => (int) $totalAmount,
+                'transfer_amount' => (int) $request->transfer_amount,
+                'user_id' => $request->user()->id,
+                'notes' => $request->notes,
+                'image' => $imagePath,
+            ]);
+
+            // Attach daily salaries to receipt
+            $receipt->dailySalaries()->attach($dailySalaryIds);
+
+            // Update daily salary status menjadi dibayar (2)
+            foreach ($salaries as $salary) {
+                $salary->update(['status' => '2']);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment receipt gaji berhasil dibuat.',
+                'data' => $receipt->load('dailySalaries')
             ], 201);
         });
     }
