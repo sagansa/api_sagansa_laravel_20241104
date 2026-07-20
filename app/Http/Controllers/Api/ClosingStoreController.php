@@ -12,6 +12,7 @@ use App\Models\Vehicle;
 use App\Models\Supplier;
 use App\Models\Presence;
 use App\Models\ShiftStore;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -408,6 +409,40 @@ class ClosingStoreController extends Controller
                 'per_page' => $fuelServices->perPage(),
                 'total' => $fuelServices->total(),
             ],
+        ]);
+    }
+
+    /**
+     * List users yang punya fuel service record (untuk filter dropdown di mobile).
+     *
+     * created_by_id di fuel_services bisa berupa numeric id ATAU uuid user.
+     * Method ini kumpulkan keduanya lalu resolve ke user.
+     */
+    public function fuelServiceUsers(Request $request)
+    {
+        $createdByIds = FuelService::query()
+            ->pluck('created_by_id')
+            ->filter()
+            ->unique()
+            ->all();
+
+        $numericIds = array_filter($createdByIds, 'is_numeric');
+        $uuids = array_filter($createdByIds, fn ($v) => ! is_numeric($v));
+
+        $users = collect();
+        if (! empty($numericIds)) {
+            $users = $users->merge(User::whereIn('id', $numericIds)->get(['id', 'name']));
+        }
+        if (! empty($uuids)) {
+            $users = $users->merge(User::whereIn('uuid', $uuids)->get(['id', 'name']));
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $users->sortBy('name')->values()->map(fn ($u) => [
+                'id' => $u->id,
+                'name' => $u->name,
+            ]),
         ]);
     }
 
