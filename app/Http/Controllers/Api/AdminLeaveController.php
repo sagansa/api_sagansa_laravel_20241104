@@ -141,7 +141,6 @@ class AdminLeaveController extends Controller
         $leave->update([
             'status' => PermitEmployee::STATUS_APPROVED,
             'approved_by_id' => Auth::id(),
-            'approved_at' => now(),
         ]);
 
         $leave->load(['createdBy', 'approvedBy']);
@@ -191,7 +190,6 @@ class AdminLeaveController extends Controller
         $leave->update([
             'status' => PermitEmployee::STATUS_REJECTED,
             'approved_by_id' => Auth::id(),
-            'approved_at' => now(),
         ]);
 
         $leave->load(['createdBy', 'approvedBy']);

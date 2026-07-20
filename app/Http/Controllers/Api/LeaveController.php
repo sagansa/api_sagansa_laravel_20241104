@@ -25,7 +25,6 @@ class LeaveController extends Controller
         }
         $leave->status = PermitEmployee::STATUS_APPROVED;
         $leave->approved_by_id = $user->id;
-        $leave->approved_at = now();
         $leave->save();
         // TODO: Trigger notifikasi ke karyawan
         return response()->json(['status' => 'success', 'message' => 'Cuti disetujui', 'data' => $this->formatLeave($leave)]);
@@ -50,7 +49,6 @@ class LeaveController extends Controller
         ]);
         $leave->status = PermitEmployee::STATUS_REJECTED;
         $leave->approved_by_id = $user->id;
-        $leave->approved_at = now();
         $leave->notes = $request->reject_note;
         $leave->save();
         // TODO: Trigger notifikasi ke karyawan

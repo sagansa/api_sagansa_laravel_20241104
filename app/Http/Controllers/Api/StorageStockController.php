@@ -176,7 +176,7 @@ class StorageStockController extends Controller
         // konsisten dengan tanggal yang disimpan saat store() (jam < 11 = hari sebelumnya).
         $today = BusinessDate::todayString();
 
-        $totalStores = \App\Models\Store::where('status', '<>', '8')->count();
+        $totalStores = \App\Models\Store::active()->count();
         $reportedStores = RemainingStorage::where('for', 'remaining_storage')
             ->where('date', $today)
             ->distinct('store_id')
