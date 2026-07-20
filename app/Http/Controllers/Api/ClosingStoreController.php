@@ -371,8 +371,27 @@ class ClosingStoreController extends Controller
                 $query->where('store_id', $presence->store_id);
             }
             $query->where('created_by_id', $user->id);
+        } else {
+            // Admin/super_admin: support scope filter 'me' (hanya milik sendiri).
+            $scope = $request->input('scope', 'all');
+            if ($scope === 'me') {
+                $query->where('created_by_id', $user->id);
+            }
+            // Filter eksplisit by created_by_id (admin only).
+            if ($request->filled('created_by_id')) {
+                $query->where('created_by_id', $request->input('created_by_id'));
+            }
         }
-        // Admin/super_admin: no store or user filter, see all
+
+        // Filter by status (1=Pending, 2=Lunas/Terhubung).
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        // Filter by fuel_service type (1=Fuel, 2=Service).
+        if ($request->filled('fuel_service')) {
+            $query->where('fuel_service', $request->input('fuel_service'));
+        }
 
         $perPage = $request->integer('per_page', 20);
         $fuelServices = $query->orderBy('date', 'desc')
