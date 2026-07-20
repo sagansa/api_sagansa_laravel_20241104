@@ -151,7 +151,7 @@ class HygieneController extends Controller
         $validator = Validator::make($request->all(), [
             'rooms' => 'required|array|min:1',
             'rooms.*.room_id' => 'required|exists:rooms,id',
-            'rooms.*.condition' => 'nullable|integer|in:1,2,3',
+            'rooms.*.condition' => 'nullable|integer|in:1,2,3,4',
             'rooms.*.notes' => 'nullable|string|max:500',
             'rooms.*.image' => 'nullable|string',
         ]);
@@ -203,7 +203,7 @@ class HygieneController extends Controller
         $hygieneOfRoom = HygieneOfRoom::findOrFail($id);
 
         $validator = Validator::make($request->all(), [
-            'condition' => 'nullable|integer|in:1,2,3',
+            'condition' => 'nullable|integer|in:1,2,3,4',
             'notes' => 'nullable|string|max:500',
         ]);
 
