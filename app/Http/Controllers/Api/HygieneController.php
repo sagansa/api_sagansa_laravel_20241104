@@ -53,7 +53,8 @@ class HygieneController extends Controller
 
     public function index(Request $request)
     {
-        $userId = $request->user()->id;
+        $user = $request->user();
+        $isAdmin = $user->hasAnyRole(['admin', 'super_admin']);
 
         $hygienes = Hygiene::with([
             'store:id,nickname',
@@ -61,7 +62,7 @@ class HygieneController extends Controller
             'createdBy:id,name',
             'approvedBy:id,name',
         ])
-            ->where('created_by_id', $userId)
+            ->when(!$isAdmin, fn ($q) => $q->where('created_by_id', $user->id))
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -80,7 +81,9 @@ class HygieneController extends Controller
             'approvedBy:id,name',
         ])->findOrFail($id);
 
-        if ($hygiene->created_by_id !== $request->user()->id) {
+        $user = $request->user();
+        if ($hygiene->created_by_id !== $user->id
+            && !$user->hasAnyRole(['admin', 'super_admin'])) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Anda tidak memiliki akses ke data ini',
