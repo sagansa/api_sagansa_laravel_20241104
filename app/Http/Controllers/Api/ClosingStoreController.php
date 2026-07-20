@@ -372,12 +372,13 @@ class ClosingStoreController extends Controller
             }
             $query->where('created_by_id', $user->id);
         } else {
-            // Admin/super_admin: support scope filter 'me' (hanya milik sendiri).
+            // Admin/super_admin: bisa lihat semua, atau filter eksplisit by user.
+            // scope=me (shortcut admin lihat milik sendiri saja).
             $scope = $request->input('scope', 'all');
             if ($scope === 'me') {
                 $query->where('created_by_id', $user->id);
             }
-            // Filter eksplisit by created_by_id (admin only).
+            // Filter eksplisit by created_by_id (admin pilih user spesifik di dropdown).
             if ($request->filled('created_by_id')) {
                 $query->where('created_by_id', $request->input('created_by_id'));
             }
