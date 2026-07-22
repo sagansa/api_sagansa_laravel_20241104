@@ -325,7 +325,7 @@ class ClosingStoreController extends Controller
         // daily salary / invoice purchase / fuel service tetap unpaid (1) meski
         // tunainya sudah masuk ke laporan closing store.
         $closingStore->dailySalaries()->update(['status' => 2]);
-        $closingStore->invoicePurchases()->update(['payment_status' => 2]);
+        $closingStore->invoicePurchases()->update(['payment_status' => '2']);
         $closingStore->fuelServices()->update(['status' => 2]);
 
         // Kembalikan item yang di-DETACH (di-uncheck user) ke unpaid (status 1),
@@ -339,7 +339,7 @@ class ClosingStoreController extends Controller
             DailySalary::whereIn('id', $detachedDailySalaryIds)->update(['status' => 1]);
         }
         if (!empty($detachedInvoicePurchaseIds)) {
-            InvoicePurchase::whereIn('id', $detachedInvoicePurchaseIds)->update(['payment_status' => 1]);
+            InvoicePurchase::whereIn('id', $detachedInvoicePurchaseIds)->update(['payment_status' => '1']);
         }
         if (!empty($detachedFuelServiceIds)) {
             FuelService::whereIn('id', $detachedFuelServiceIds)->update(['status' => 1]);
@@ -393,6 +393,11 @@ class ClosingStoreController extends Controller
         // Filter by fuel_service type (1=Fuel, 2=Service).
         if ($request->filled('fuel_service')) {
             $query->where('fuel_service', $request->input('fuel_service'));
+        }
+
+        // Filter by payment_type_id (1=Transfer, 2=Tunai/Cash).
+        if ($request->filled('payment_type_id')) {
+            $query->where('payment_type_id', $request->input('payment_type_id'));
         }
 
         $perPage = $request->integer('per_page', 20);
@@ -561,9 +566,13 @@ class ClosingStoreController extends Controller
     public function vehicles()
     {
         $vehicles = Vehicle::where('status', 1)->get();
+        // Append last_km (computed accessor) untuk validasi di form mobile.
         return response()->json([
             'success' => true,
-            'data' => $vehicles
+            'data' => $vehicles->map(fn ($v) => array_merge(
+                $v->toArray(),
+                ['last_km' => $v->last_km],
+            )),
         ]);
     }
 

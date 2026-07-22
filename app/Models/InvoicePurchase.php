@@ -25,6 +25,23 @@ class InvoicePurchase extends Model
         'order_status',
     ];
 
+    /**
+     * Cast payment_status & order_status ke string.
+     *
+     * Historis, kolom ini ditulis dengan tipe tidak konsisten:
+     * - create: '1' (string) — ProcurementController:467
+     * - bulk update via ClosingStoreController: 2 / 1 (integer)
+     * - query: where('payment_status', 3) (integer literal)
+     *
+     * Tanpa cast, strict comparison `$inv->payment_status !== '1'` gagal
+     * karena nilai DB bisa int(1). Cast ke string menormalisasi semua
+     * baca sehingga comparison konsisten.
+     */
+    protected $casts = [
+        'payment_status' => 'string',
+        'order_status' => 'string',
+    ];
+
     public function paymentType()
     {
         return $this->belongsTo(PaymentType::class);

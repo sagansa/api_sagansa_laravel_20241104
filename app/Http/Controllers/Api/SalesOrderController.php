@@ -258,8 +258,13 @@ class SalesOrderController extends Controller
     public function updateDelivery(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'receipt_no' => 'required|string',
-            'image_delivery' => 'required_if:delivery_status,3|string', // required only if status is 3
+            // receipt_no wajib untuk online order (for=3), order_id wajib untuk
+            // direct order (for=1). Salah satu harus diisi.
+            'receipt_no' => 'nullable|string',
+            'order_id' => 'nullable|integer',
+            // image_delivery: bisa string tunggal (legacy) ATAU array path
+            // (multi-upload). Required hanya saat status=3 (sudah dikirim).
+            'image_delivery' => 'nullable',
             'received_by' => 'nullable|string|max:255',
             'delivery_status' => 'nullable|in:3,6',
             'notes' => 'nullable|string',
@@ -273,13 +278,24 @@ class SalesOrderController extends Controller
             ], 400);
         }
 
+        // Lookup order: direct (for=1) by order_id, online (for=3) by receipt_no.
+        $order = null;
         $receiptNo = $request->input('receipt_no');
+        $orderId = $request->input('order_id');
 
-        $order = DB::table('sales_orders')
-            ->where('receipt_no', $receiptNo)
-            ->where('for', 3)
-            ->whereNull('deleted_at')
-            ->first();
+        if ($orderId) {
+            $order = DB::table('sales_orders')
+                ->where('id', $orderId)
+                ->where('for', 1)
+                ->whereNull('deleted_at')
+                ->first();
+        } elseif ($receiptNo) {
+            $order = DB::table('sales_orders')
+                ->where('receipt_no', $receiptNo)
+                ->where('for', 3)
+                ->whereNull('deleted_at')
+                ->first();
+        }
 
         if (!$order) {
             return response()->json([
@@ -296,21 +312,37 @@ class SalesOrderController extends Controller
             ], 400);
         }
 
-        // Handle image upload
-        $imagePath = null;
-        if ($request->filled('image_delivery')) {
-            if ($order->image_delivery && $order->image_delivery !== $request->input('image_delivery')) {
-                app(\App\Contracts\ImageStorageContract::class)->delete($order->image_delivery);
-            }
-            $imagePath = $request->input('image_delivery');
+        $deliveryStatus = (int) $request->input('delivery_status', 3);
+
+        // Validasi image_delivery wajib saat status=3 (sudah dikirim).
+        // Bisa string tunggal atau array path.
+        $imageInput = $request->input('image_delivery');
+        $hasImages = is_array($imageInput)
+            ? count($imageInput) > 0
+            : filled($imageInput);
+        if ($deliveryStatus === 3 && !$hasImages) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Foto bukti pengiriman wajib diunggah untuk status sudah dikirim.',
+            ], 400);
         }
 
-        $deliveryStatus = (int) $request->input('delivery_status', 3);
+        // Normalisasi image_delivery menjadi JSON array path.
+        // Hapus foto lama yang tidak ada di list baru.
+        $newImagePaths = is_array($imageInput)
+            ? array_values(array_filter($imageInput, fn ($p) => filled($p)))
+            : (filled($imageInput) ? [$imageInput] : []);
+        $oldImagePaths = $this->decodeImagePaths($order->image_delivery);
+        foreach (array_diff($oldImagePaths, $newImagePaths) as $dropped) {
+            app(\App\Contracts\ImageStorageContract::class)->delete($dropped);
+        }
+        $imagePathJson = !empty($newImagePaths) ? json_encode($newImagePaths) : null;
+
         $notes = $request->input('notes');
 
         $updateData = [
             'delivery_status' => $deliveryStatus,
-            'image_delivery' => $imagePath,
+            'image_delivery' => $imagePathJson,
             'updated_at' => now(),
         ];
 
@@ -332,11 +364,33 @@ class SalesOrderController extends Controller
             'success' => true,
             'message' => "Status pengiriman berhasil diperbarui menjadi {$statusMsg}.",
             'data' => [
-                'receipt_no' => $receiptNo,
+                'receipt_no' => $order->receipt_no,
+                'order_id' => $order->id,
                 'delivery_status' => $deliveryStatus,
-                'image_delivery_url' => $this->getStorageUrl($imagePath)
+                // Kirim array URL agar mobile bisa render semua foto.
+                'image_delivery_urls' => array_map(
+                    fn ($p) => $this->getStorageUrl($p),
+                    $newImagePaths
+                ),
             ]
         ]);
+    }
+
+    /**
+     * Decode kolom image_delivery yang mungkin berisi:
+     * - string tunggal (path lama, sebelum multi-upload)
+     * - JSON array path (multi-upload baru)
+     * - null
+     *
+     * @return string[]
+     */
+    private function decodeImagePaths(?string $raw): array
+    {
+        if (blank($raw)) return [];
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) return array_values(array_filter($decoded, fn ($p) => filled($p)));
+        // String tunggal (legacy).
+        return [$raw];
     }
 
     public function markReadyToShip(Request $request)

@@ -534,7 +534,9 @@ class ProcurementController extends Controller
             ], 404);
         }
 
-        if ($invoice->payment_status !== '1') {
+        // Loose comparison (!=) bukan strict (!==): nilai payment_status bisa
+        // string '1' atau int 1 tergantung write path. Lihat InvoicePurchase::$casts.
+        if ($invoice->payment_status != '1') {
             return response()->json([
                 'success' => false,
                 'message' => 'Hanya invoice draft yang dapat diedit.'
@@ -762,7 +764,9 @@ class ProcurementController extends Controller
         // Verify all invoices are unpaid and Transfer payment type
         $invoices = InvoicePurchase::whereIn('id', $invoiceIds)->get();
         foreach ($invoices as $inv) {
-            if ($inv->payment_status !== '1') {
+            // Loose comparison (!=): payment_status bisa string '1' atau int 1.
+            // Lihat InvoicePurchase::$casts yang menormalisasi ke string.
+            if ($inv->payment_status != '1') {
                 return response()->json([
                     'success' => false,
                     'message' => "Invoice #{$inv->id} sudah dibayar atau tidak valid."

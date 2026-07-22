@@ -36,4 +36,22 @@ class Vehicle extends Model
 
         return $this->no_register . ' - ' . $statuses[$this->status];
     }
+
+    /**
+     * KM terakhir kendaraan, diambil dari fuel service terbaru (apapun status-nya)
+     * yang memiliki km > 0. Dipakai oleh form mobile untuk validasi agar
+     * km input tidak lebih kecil dari km terakhir.
+     *
+     * Di-append ke response array lewat $append di controller (lihat vehicles()).
+     */
+    public function getLastKmAttribute(): ?float
+    {
+        $latest = $this->fuelServices()
+            ->where('km', '>', 0)
+            ->orderByDesc('date')
+            ->orderByDesc('created_at')
+            ->first();
+
+        return $latest?->km;
+    }
 }
