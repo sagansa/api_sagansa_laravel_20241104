@@ -320,7 +320,7 @@ class ProcurementController extends Controller
     /**
      * Get detail of a specific invoice purchase.
      */
-    public function showInvoice($id)
+    public function showInvoice($id, Request $request)
     {
         $invoice = InvoicePurchase::with([
             'store', 'supplier', 'createdBy',
@@ -333,6 +333,16 @@ class ProcurementController extends Controller
                 'success' => false,
                 'message' => 'Invoice tidak ditemukan.'
             ], 404);
+        }
+
+        // Admin: append harga beli terakhir per item (lintas supplier) untuk
+        // evaluasi. Staff tidak butuh info ini.
+        $user = $request->user();
+        $isAdmin = $user && ($user->hasRole('admin') || $user->hasRole('super_admin'));
+        if ($isAdmin) {
+            $invoice->detailInvoices->each(function ($detail) {
+                $detail->append('last_purchase_price');
+            });
         }
 
         return response()->json([
