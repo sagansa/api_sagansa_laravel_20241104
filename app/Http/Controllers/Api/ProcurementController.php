@@ -412,6 +412,7 @@ class ProcurementController extends Controller
             'items.*.quantity' => 'required|numeric|min:1',
             'request_ids' => 'nullable|array',
             'request_ids.*' => 'integer|exists:request_purchases,id',
+            'payment_type_id' => 'nullable|integer|in:1,2',
         ]);
 
         $requestPurchase = RequestPurchase::find($id);
@@ -477,7 +478,7 @@ class ProcurementController extends Controller
                 'payment_status' => '1',
                 'order_status' => '1',
                 'created_by_id' => $request->user()->id,
-                'payment_type_id' => 2,
+                'payment_type_id' => $request->input('payment_type_id', 2),
                 'total_price' => $totalPrice,
                 'supplier_id' => $request->supplier_id,
                 'taxes' => 0,
@@ -990,6 +991,15 @@ class ProcurementController extends Controller
         }
 
         $items = $query->orderBy('id', 'desc')->get();
+
+        // Admin: append harga beli terakhir per item untuk evaluasi harga.
+        $user = $request->user();
+        $isAdmin = $user && ($user->hasRole('admin') || $user->hasRole('super_admin'));
+        if ($isAdmin) {
+            $items->each(function ($item) {
+                $item->append('last_purchase_price');
+            });
+        }
 
         return response()->json([
             'success' => true,

@@ -143,9 +143,9 @@ class PresenceController extends Controller
         $presenceUserId = $this->resolvePresenceUserId($user);
         $now = Carbon::now();
         $today = Carbon::today();
-        $toleranceEnd = $today->copy()->addHours(3); // Toleransi sampai jam 3 pagi
+        $toleranceEnd = $today->copy()->addHours(6); // Toleransi sampai jam 6 pagi (shift malam bisa checkout sampai 06:00)
 
-        // Jika masih dalam rentang toleransi (sebelum jam 3 pagi)
+        // Jika masih dalam rentang toleransi (sebelum jam 6 pagi)
         if ($now->lt($toleranceEnd)) {
             $yesterday = Carbon::yesterday();
             $todayPresence = Presence::with(['store', 'shiftStore'])
@@ -236,9 +236,14 @@ class PresenceController extends Controller
                 $shiftEndDateTime->addDay();
             }
 
-            // Tambah toleransi 3 jam untuk checkout
-            $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3)
-                ->timezone('Asia/Jakarta');
+            // Hitung batas waktu checkout:
+            // - shift malam (lintas tengah malam): 06:00 hari berikutnya
+            // - shift normal: shift_end + 3 jam
+            $checkoutDeadline = $this->computeCheckoutDeadline(
+                $shiftEndDateTime,
+                $shiftStartTime,
+                $shiftEndTime
+            )->timezone('Asia/Jakarta');
 
             if ($checkOutDateTime->isBefore($shiftEndDateTime)) {
                 $checkOutStatus = 'pulang_cepat';
@@ -255,9 +260,14 @@ class PresenceController extends Controller
                 $shiftEndDateTime->addDay();
             }
 
-            // Tambah toleransi 3 jam
-            $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3)
-                ->timezone('Asia/Jakarta');
+            // Hitung batas waktu checkout (lihat computeCheckoutDeadline):
+            // - shift malam (lintas tengah malam): 06:00 hari berikutnya
+            // - shift normal: shift_end + 3 jam
+            $checkoutDeadline = $this->computeCheckoutDeadline(
+                $shiftEndDateTime,
+                $shiftStartTime,
+                $shiftEndTime
+            )->timezone('Asia/Jakarta');
 
             if (Carbon::now()->isAfter($checkoutDeadline)) {
                 $checkOutStatus = 'tidak_absen';
@@ -507,8 +517,14 @@ class PresenceController extends Controller
                     $shiftEndDateTime->addDay();
                 }
 
-                // Tambah toleransi 3 jam
-                $checkoutDeadline = $shiftEndDateTime->copy()->addHours(3);
+                // Hitung batas waktu checkout:
+                // - shift malam (lintas tengah malam): 06:00 hari berikutnya
+                // - shift normal: shift_end + 3 jam
+                $checkoutDeadline = $this->computeCheckoutDeadline(
+                    $shiftEndDateTime,
+                    $shiftStore->shift_start_time,
+                    $shiftStore->shift_end_time
+                );
 
                 if ($now->isAfter($checkoutDeadline)) {
                     return response()->json([
@@ -703,6 +719,34 @@ class PresenceController extends Controller
             'status' => 'error',
             'message' => 'User presensi tidak dapat disinkronkan otomatis karena ID sudah digunakan. Hubungi administrator.',
         ], 422));
+    }
+
+    /**
+     * Hitung batas waktu checkout (deadline) berdasarkan akhir shift.
+     *
+     * Aturan:
+     * - Shift malam (lintas tengah malam, mis. 10:00-00:00 atau 22:00-06:00):
+     *   deadline = 06:00 di hari yang sama dengan $shiftEndDateTime (yang sudah
+     *   berada di "hari berikutnya" setelah pemanggil menyesuaikan addDay()).
+     *   Trace 10:00-00:00, check-in 26 Jul: shiftEnd 27 Jul 00:00 → deadline 27 Jul 06:00.
+     * - Shift normal (tidak lintas tengah malam, mis. 08:00-16:00):
+     *   deadline = shiftEnd + 3 jam (perilaku lama, tidak diubah).
+     *
+     * $shiftEndDateTime diasumsikan SUDAH disesuaikan untuk cross-midnight
+     * (pemanggil wajib addDay() bila $shiftEndTime < $shiftStartTime).
+     */
+    private function computeCheckoutDeadline(
+        Carbon $shiftEndDateTime,
+        $shiftStartTime,
+        $shiftEndTime
+    ): Carbon {
+        if ($shiftEndTime !== null && $shiftStartTime !== null && $shiftEndTime < $shiftStartTime) {
+            // Shift melintasi tengah malam: grace sampai 06:00 hari berikutnya.
+            return $shiftEndDateTime->copy()->setTime(6, 0, 0);
+        }
+
+        // Shift normal: toleransi 3 jam setelah shift berakhir.
+        return $shiftEndDateTime->copy()->addHours(3);
     }
 
     public function getStores(Request $request)

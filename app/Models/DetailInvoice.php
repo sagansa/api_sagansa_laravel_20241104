@@ -37,27 +37,27 @@ class DetailInvoice extends Model
     }
 
     /**
-     * Harga beli terakhir untuk product yang sama (lintas supplier).
+     * Riwayat harga beli terakhir (maks 5) untuk product yang sama (lintas supplier).
      *
      * Query detail_invoices lain yang detail_request-nya merujuk product yang
      * sama, urutkan berdasarkan created_at invoice terbaru, ambil unit price
-     * (subtotal_invoice / quantity_product).
+     * (subtotal_invoice / quantity_product). Dibatasi 5 terakhir.
      *
-     * Return array ['unit_price' => int|null, 'supplier_name' => string|null,
-     * 'date' => string|null] atau null bila tidak ada riwayat.
+     * Return list of ['unit_price' => int, 'supplier_name' => ?string,
+     * 'date' => ?string] atau array kosong bila tidak ada riwayat.
      */
-    public function lastPurchasePrice(): ?array
+    public function lastPurchasePrice(): array
     {
         $productId = optional($this->detailRequest)->product_id;
         if (!$productId) {
-            return null;
+            return [];
         }
 
         // Cari detail_invoices lain dengan product yang sama, lebih dahulu dari
         // invoice saat ini (created_at di invoice_purchase).
         $currentDate = optional($this->invoicePurchase)->created_at;
 
-        $row = self::query()
+        $rows = self::query()
             ->join('detail_requests as dr', 'detail_invoices.detail_request_id', '=', 'dr.id')
             ->join('invoice_purchases as ip', 'detail_invoices.invoice_purchase_id', '=', 'ip.id')
             ->leftJoin('suppliers as s', 'ip.supplier_id', '=', 's.id')
@@ -66,28 +66,26 @@ class DetailInvoice extends Model
             ->where('detail_invoices.quantity_product', '>', 0)
             ->when($currentDate, fn($q) => $q->where('ip.created_at', '<', $currentDate))
             ->orderByDesc('ip.created_at')
+            ->limit(5)
             ->select(
                 DB::raw('detail_invoices.subtotal_invoice / detail_invoices.quantity_product as unit_price'),
                 's.name as supplier_name',
                 'ip.created_at as date'
             )
-            ->first();
+            ->get();
 
-        if (!$row) {
-            return null;
-        }
-
-        return [
-            'unit_price' => (int) round($row->unit_price),
-            'supplier_name' => $row->supplier_name,
-            'date' => $row->date,
-        ];
+        return $rows->map(fn($r) => [
+            'unit_price' => (int) round($r->unit_price),
+            'supplier_name' => $r->supplier_name,
+            'date' => $r->date,
+        ])->values()->all();
     }
 
     /**
      * Accessor: appends last_purchase_price saat serialize (dipakai admin).
+     * Return list (maks 5 riwayat harga).
      */
-    public function getLastPurchasePriceAttribute(): ?array
+    public function getLastPurchasePriceAttribute(): array
     {
         // Hanya compute bila dipanggil eksplisit (via appends di showInvoice admin)
         // untuk hindari N+1 pada list. Default tidak di-append.
