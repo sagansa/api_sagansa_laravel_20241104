@@ -134,18 +134,6 @@ class HygieneController extends Controller
 
         $user = $request->user();
         $userId = $user->id;
-        $today = Carbon::today();
-
-        $existing = Hygiene::where('created_by_id', $userId)
-            ->whereDate('created_at', $today)
-            ->exists();
-
-        if ($existing) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Anda sudah mengirim laporan kebersihan hari ini',
-            ], 400);
-        }
 
         $storeId = $request->input('store_id')
             ?? $this->userTodayStoreId($user);
