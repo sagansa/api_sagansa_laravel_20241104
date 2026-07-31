@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use App\Support\BusinessDate;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class StorageStockController extends Controller
 {
@@ -172,35 +174,58 @@ class StorageStockController extends Controller
      */
     public function todayStatus(Request $request)
     {
-        // Samakan dengan business date agar pengecekan "sudah lapor hari ini"
-        // konsisten dengan tanggal yang disimpan saat store() (jam < 11 = hari sebelumnya).
-        $today = BusinessDate::todayString();
+        try {
+            // Samakan dengan business date agar pengecekan "sudah lapor hari ini"
+            // konsisten dengan tanggal yang disimpan saat store() (jam < 11 = hari sebelumnya).
+            $today = BusinessDate::todayString();
 
-        $totalStores = \App\Models\Store::active()->count();
-        $reportedStores = RemainingStorage::where('for', 'remaining_storage')
-            ->where('date', $today)
-            ->distinct('store_id')
-            ->count('store_id');
-
-        $userStoreReported = false;
-        if ($request->user()->hasRole('storage-staff') || $request->user()->hasRole('admin')) {
-            $presence = \App\Models\Presence::where('created_by_id', $request->user()->id)
-                ->whereDate('check_in', $today)
-                ->first();
-            if ($presence) {
-                $userStoreReported = RemainingStorage::where('for', 'remaining_storage')
-                    ->where('date', $today)
-                    ->where('store_id', $presence->store_id)
-                    ->exists();
+            // Sebagian database production lama belum memiliki kolom
+            // `is_active`; dalam schema tersebut semua store dianggap aktif.
+            $storesQuery = \App\Models\Store::query();
+            if (Schema::hasColumn('stores', 'is_active')) {
+                $storesQuery->where('is_active', true);
             }
-        }
+            $totalStores = $storesQuery->count();
+            $reportedStores = RemainingStorage::where('for', 'remaining_storage')
+                ->where('date', $today)
+                ->distinct('store_id')
+                ->count('store_id');
 
-        return response()->json([
-            'success' => true,
-            'total_stores' => $totalStores,
-            'reported_stores' => $reportedStores,
-            'user_store_reported' => $userStoreReported,
-        ]);
+            $userStoreReported = false;
+            $user = $request->user();
+            if ($user && ($user->hasRole('storage-staff') || $user->hasRole('admin'))) {
+                $presence = \App\Models\Presence::where('created_by_id', $user->id)
+                    ->whereDate('check_in', $today)
+                    ->first();
+                if ($presence) {
+                    $userStoreReported = RemainingStorage::where('for', 'remaining_storage')
+                        ->where('date', $today)
+                        ->where('store_id', $presence->store_id)
+                        ->exists();
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'total_stores' => $totalStores,
+                'reported_stores' => $reportedStores,
+                'user_store_reported' => $userStoreReported,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Storage stock today status failed', [
+                'user_id' => optional($request->user())->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            // Status ini hanya data pendukung dashboard; jangan membuat seluruh
+            // halaman gagal bila salah satu query monitoring bermasalah.
+            return response()->json([
+                'success' => false,
+                'total_stores' => 0,
+                'reported_stores' => 0,
+                'user_store_reported' => false,
+            ]);
+        }
     }
 
     /**

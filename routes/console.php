@@ -41,3 +41,13 @@ Schedule::call(function () {
 })->dailyAt('06:00')
     ->name('asset-checks:daily')
     ->withoutOverlapping();
+
+/**
+ * Foto kesiapan diri dan kebersihan toko hanya diperlukan untuk verifikasi
+ * jangka pendek. Record tetap disimpan untuk histori, tetapi file dan path
+ * foto dibersihkan setelah melewati dua bulan.
+ */
+Schedule::command('readiness:prune-images')
+    ->dailyAt('02:30')
+    ->name('readiness:prune-images')
+    ->withoutOverlapping();
