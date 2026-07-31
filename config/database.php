@@ -59,6 +59,14 @@ return [
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
+                // Reuse one PDO per fpm-worker across requests instead of opening a
+                // fresh connection on every request. Shared hosts (Hostinger family)
+                // deny connect() with EPERM "Operation not permitted" (PDO code 2002)
+                // when burst concurrency exceeds the account's MySQL connection limit;
+                // persistent connections collapse that burst and prevent the 500s on
+                // concurrent dashboard endpoints (salaries, presences, users, ...).
+                // Toggle off per-env with DB_PERSISTENT=false.
+                \PDO::ATTR_PERSISTENT => (bool) env('DB_PERSISTENT', true),
             ]) : [],
         ],
 
@@ -79,6 +87,14 @@ return [
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
+                // Reuse one PDO per fpm-worker across requests instead of opening a
+                // fresh connection on every request. Shared hosts (Hostinger family)
+                // deny connect() with EPERM "Operation not permitted" (PDO code 2002)
+                // when burst concurrency exceeds the account's MySQL connection limit;
+                // persistent connections collapse that burst and prevent the 500s on
+                // concurrent dashboard endpoints (salaries, presences, users, ...).
+                // Toggle off per-env with DB_PERSISTENT=false.
+                \PDO::ATTR_PERSISTENT => (bool) env('DB_PERSISTENT', true),
             ]) : [],
         ],
 
@@ -99,6 +115,14 @@ return [
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
+                // Reuse one PDO per fpm-worker across requests instead of opening a
+                // fresh connection on every request. Shared hosts (Hostinger family)
+                // deny connect() with EPERM "Operation not permitted" (PDO code 2002)
+                // when burst concurrency exceeds the account's MySQL connection limit;
+                // persistent connections collapse that burst and prevent the 500s on
+                // concurrent dashboard endpoints (salaries, presences, users, ...).
+                // Toggle off per-env with DB_PERSISTENT=false.
+                \PDO::ATTR_PERSISTENT => (bool) env('DB_PERSISTENT', true),
             ]) : [],
         ],
 
@@ -119,6 +143,14 @@ return [
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
+                // Reuse one PDO per fpm-worker across requests instead of opening a
+                // fresh connection on every request. Shared hosts (Hostinger family)
+                // deny connect() with EPERM "Operation not permitted" (PDO code 2002)
+                // when burst concurrency exceeds the account's MySQL connection limit;
+                // persistent connections collapse that burst and prevent the 500s on
+                // concurrent dashboard endpoints (salaries, presences, users, ...).
+                // Toggle off per-env with DB_PERSISTENT=false.
+                \PDO::ATTR_PERSISTENT => (bool) env('DB_PERSISTENT', true),
             ]) : [],
         ],
 
