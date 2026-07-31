@@ -1056,7 +1056,9 @@ class ProcurementController extends Controller
         }
 
         // Hanya receipt fuel service yang bisa diedit via endpoint ini.
-        if ($receipt->payment_for !== \App\Enum\PaymentFor::FuelService) {
+        // NB: payment_for dibandingkan sebagai string ('1' = FuelService)
+        // karena enum PaymentFor hanya ada di app admin, bukan di service API.
+        if ((string) $receipt->payment_for !== '1') {
             return response()->json([
                 'success' => false,
                 'message' => 'Endpoint ini hanya untuk payment receipt Fuel & Service.'
