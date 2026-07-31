@@ -54,7 +54,7 @@ class DetailInvoice extends Model
         // invoice saat ini (created_at di invoice_purchase).
         $currentDate = optional($this->invoicePurchase)->created_at;
 
-        $rows = self::query()
+        $row = self::query()
             ->join('detail_requests as dr', 'detail_invoices.detail_request_id', '=', 'dr.id')
             ->join('invoice_purchases as ip', 'detail_invoices.invoice_purchase_id', '=', 'ip.id')
             ->leftJoin('suppliers as s', 'ip.supplier_id', '=', 's.id')
