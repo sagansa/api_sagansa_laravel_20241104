@@ -673,6 +673,8 @@ class ProcurementController extends Controller
             'invoicePurchases.store',
             'invoicePurchases.supplier',
             'invoicePurchases.detailInvoices.detailRequest.product.unit',
+            'fuelServices.vehicle',
+            'fuelServices.createdBy',
             'supplier',
         ])->find($id);
 
