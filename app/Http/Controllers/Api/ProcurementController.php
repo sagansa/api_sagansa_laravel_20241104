@@ -1014,6 +1014,115 @@ class ProcurementController extends Controller
         });
     }
 
+    /**
+     * Update fuel-service payment receipt: edit daftar item (add/remove)
+     * dengan sinkronisasi status dua arah, plus metadata (transfer_amount,
+     * notes, image). total_amount selalu dihitung ulang dari sum amount item.
+     *
+     * Otorisasi: hanya admin/super_admin. Hanya berlaku payment_for == '1'.
+     */
+    public function updateFuelServicePaymentReceipt(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!($user->hasRole('admin') || $user->hasRole('super_admin'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk mengedit payment receipt.'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'fuel_service_ids' => 'required|array|min:1',
+            'fuel_service_ids.*' => 'exists:fuel_services,id',
+            'transfer_amount' => 'required|numeric|min:1',
+            'notes' => 'nullable|string|max:500',
+            'image' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $receipt = PaymentReceipt::find($id);
+        if (!$receipt) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment receipt tidak ditemukan.'
+            ], 404);
+        }
+
+        // Hanya receipt fuel service yang bisa diedit via endpoint ini.
+        if ($receipt->payment_for !== \App\Enum\PaymentFor::FuelService) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Endpoint ini hanya untuk payment receipt Fuel & Service.'
+            ], 400);
+        }
+
+        $newFuelServiceIds = $request->fuel_service_ids;
+
+        // Load item-item baru (state target).
+        $newFuelServices = FuelService::whereIn('id', $newFuelServiceIds)->get();
+        foreach ($newFuelServices as $fs) {
+            // Pre-check: harus Transfer.
+            if ($fs->payment_type_id != 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Bensin/Servis #{$fs->id} bukan metode Transfer."
+                ], 400);
+            }
+            // Pre-check: harus pending (1), KECUALI jika sudah ter-attach ke
+            // receipt ini (status '2' karena receipt ini sendiri). Item yang
+            // lunas karena receipt lain ditolak.
+            $attachedToThis = $receipt->fuelServices()
+                ->where('fuel_service_id', $fs->id)
+                ->exists();
+            if ($fs->status != '1' && !$attachedToThis) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Bensin/Servis #{$fs->id} sudah dibayar di receipt lain atau tidak valid."
+                ], 400);
+            }
+        }
+
+        return DB::transaction(function () use ($request, $receipt, $newFuelServiceIds, $newFuelServices) {
+            $currentAttachedIds = $receipt->fuelServices()->pluck('fuel_services.id')->all();
+
+            $toDetach = array_values(array_diff($currentAttachedIds, $newFuelServiceIds));
+            $toAttach = array_values(array_diff($newFuelServiceIds, $currentAttachedIds));
+
+            // Remove: detach + status kembali pending (1).
+            if (!empty($toDetach)) {
+                $receipt->fuelServices()->detach($toDetach);
+                FuelService::whereIn('id', $toDetach)->update(['status' => '1']);
+            }
+
+            // Add: attach + status jadi lunas (2).
+            if (!empty($toAttach)) {
+                $receipt->fuelServices()->attach($toAttach);
+                FuelService::whereIn('id', $toAttach)->update(['status' => '2']);
+            }
+
+            // Update metadata. total_amount computed dari sum amount item final.
+            $receipt->update([
+                'transfer_amount' => (int) $request->transfer_amount,
+                'total_amount' => (int) $newFuelServices->sum('amount'),
+                'notes' => $request->notes,
+                'image' => $request->filled('image') ? $request->input('image') : $receipt->image,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment receipt berhasil diperbarui.',
+                'data' => $receipt->load(['fuelServices.vehicle', 'fuelServices.createdBy'])
+            ], 200);
+        });
+    }
+
     public function detailRequests(Request $request)
     {
         $request->validate([
