@@ -15,6 +15,7 @@ use App\Models\FuelService;
 use App\Services\QrisService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class ProcurementController extends Controller
@@ -628,9 +629,21 @@ class ProcurementController extends Controller
      */
     public function paymentReceipts(Request $request)
     {
+        // Filter by payment_for (1=FuelService, 2=DailySalary, 3=InvoicePurchase).
+        // Default to InvoicePurchase (3) hanya bila param TIDAK dikirim, agar
+        // tetap backward-compatible dengan caller lama yang mengharapkan list
+        // invoice receipts. Caller baru (mis. tab Pembayaran fuel service) kirim
+        // payment_for=1 untuk mendapatkan receipt fuel/service.
         $query = PaymentReceipt::with([
-            'invoicePurchases.store', 'invoicePurchases.supplier', 'supplier'
-        ])->where('payment_for', '3'); // Only Invoice Purchase receipts
+            'invoicePurchases.store', 'invoicePurchases.supplier', 'supplier',
+            'fuelServices.vehicle', 'fuelServices.createdBy',
+        ]);
+
+        if ($request->filled('payment_for')) {
+            $query->where('payment_for', $request->input('payment_for'));
+        } else {
+            $query->where('payment_for', '3'); // backward-compat default
+        }
 
         if ($request->has('invoice_id')) {
             $query->whereHas('invoicePurchases', fn ($q) => $q->where('invoice_purchase_id', $request->invoice_id));
@@ -960,10 +973,36 @@ class ProcurementController extends Controller
             // Attach fuel services to receipt
             $receipt->fuelServices()->attach($fuelServiceIds);
 
-            // Update fuel service status to paid (status='2')
+            // Update fuel service status to paid (status='2').
+            // DIAGNOSTIC: log before/after status per id + affected-rows count
+            // untuk menyelidiki laporan "sebagian item tetap Pending setelah
+            // dibayar". Jika affected_rows < jumlah id, berarti update diam-diam
+            // melewatkan beberapa baris (mass-assignment / scope / cache).
+            $before = FuelService::whereIn('id', $fuelServiceIds)
+                ->pluck('status', 'id')
+                ->all();
+
             foreach ($fuelServices as $fs) {
                 $fs->update(['status' => '2']);
             }
+
+            $after = FuelService::whereIn('id', $fuelServiceIds)
+                ->pluck('status', 'id')
+                ->all();
+
+            Log::info('FuelService payment receipt created', [
+                'receipt_id' => $receipt->id,
+                'requested_ids' => $fuelServiceIds,
+                'requested_count' => count($fuelServiceIds),
+                'queried_count' => $fuelServices->count(),
+                'status_before' => $before,
+                'status_after' => $after,
+                'still_pending_after' => collect($after)
+                    ->filter(fn ($s) => $s != '2')
+                    ->keys()
+                    ->values()
+                    ->all(),
+            ]);
 
             return response()->json([
                 'success' => true,
