@@ -37,24 +37,20 @@ class DetailInvoice extends Model
     }
 
     /**
-     * Harga beli terakhir untuk product yang sama (lintas supplier).
-     *
-     * Kontrak API untuk field `last_purchase_price` adalah objek tunggal atau
-     * null. Mengembalikan array numerik (`[]`) saat tidak ada riwayat membuat
-     * klien yang mengharapkan object gagal melakukan deserialisasi.
+     * Riwayat harga beli terakhir (maksimal 5) untuk product yang sama.
      */
-    public function lastPurchasePrice(): ?array
+    public function lastPurchasePrice(): array
     {
         $productId = optional($this->detailRequest)->product_id;
         if (!$productId) {
-            return null;
+            return [];
         }
 
         // Cari detail_invoices lain dengan product yang sama, lebih dahulu dari
         // invoice saat ini (created_at di invoice_purchase).
         $currentDate = optional($this->invoicePurchase)->created_at;
 
-        $row = self::query()
+        $rows = self::query()
             ->join('detail_requests as dr', 'detail_invoices.detail_request_id', '=', 'dr.id')
             ->join('invoice_purchases as ip', 'detail_invoices.invoice_purchase_id', '=', 'ip.id')
             ->leftJoin('suppliers as s', 'ip.supplier_id', '=', 's.id')
@@ -68,24 +64,21 @@ class DetailInvoice extends Model
                 's.name as supplier_name',
                 'ip.created_at as date'
             )
-            ->first();
+            ->limit(5)
+            ->get();
 
-        if (!$row) {
-            return null;
-        }
-
-        return [
+        return $rows->map(fn($row) => [
             'unit_price' => (int) round($row->unit_price),
             'supplier_name' => $row->supplier_name,
             'date' => $row->date,
-        ];
+        ])->values()->all();
     }
 
     /**
      * Accessor: appends last_purchase_price saat serialize (dipakai admin).
-     * Return objek harga terakhir atau null bila belum ada riwayat.
+     * Return daftar riwayat harga (maksimal 5).
      */
-    public function getLastPurchasePriceAttribute(): ?array
+    public function getLastPurchasePriceAttribute(): array
     {
         // Hanya compute bila dipanggil eksplisit (via appends di showInvoice admin)
         // untuk hindari N+1 pada list. Default tidak di-append.
