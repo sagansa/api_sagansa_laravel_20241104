@@ -414,6 +414,8 @@ class ProcurementController extends Controller
             'request_ids' => 'nullable|array',
             'request_ids.*' => 'integer|exists:request_purchases,id',
             'payment_type_id' => 'nullable|integer|in:1,2',
+            'taxes' => 'nullable|numeric|min:0',
+            'discounts' => 'nullable|numeric|min:0',
         ]);
 
         $requestPurchase = RequestPurchase::find($id);
@@ -473,6 +475,10 @@ class ProcurementController extends Controller
                 ];
             }
 
+            $taxes = (int) ($request->taxes ?? 0);
+            $discounts = (int) ($request->discounts ?? 0);
+            $totalPrice = $totalPrice + $taxes - $discounts;
+
             $invoice = InvoicePurchase::create([
                 'store_id' => $requestPurchase->store_id,
                 'date' => now()->toDateString(),
@@ -482,8 +488,8 @@ class ProcurementController extends Controller
                 'payment_type_id' => $request->input('payment_type_id', 2),
                 'total_price' => $totalPrice,
                 'supplier_id' => $request->supplier_id,
-                'taxes' => 0,
-                'discounts' => 0,
+                'taxes' => $taxes,
+                'discounts' => $discounts,
             ]);
 
             $assetsCreated = 0;
