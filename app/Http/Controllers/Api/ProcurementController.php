@@ -409,7 +409,8 @@ class ProcurementController extends Controller
             'supplier_id' => 'required|exists:suppliers,id',
             'items' => 'required|array|min:1',
             'items.*.detail_request_id' => 'required|exists:detail_requests,id',
-            'items.*.price' => 'required|numeric|min:0',
+            'items.*.price' => 'nullable|numeric|min:0',
+            'items.*.subtotal_invoice' => 'nullable|numeric|min:0',
             'items.*.quantity' => 'required|numeric|min:1',
             'request_ids' => 'nullable|array',
             'request_ids.*' => 'integer|exists:request_purchases,id',
@@ -417,6 +418,19 @@ class ProcurementController extends Controller
             'taxes' => 'nullable|numeric|min:0',
             'discounts' => 'nullable|numeric|min:0',
         ]);
+
+        // Frontend mengirim subtotal_invoice (source of truth) atau price
+        // (backward compat). Minimal salah satu wajib ada per item.
+        foreach ($request->items as $item) {
+            $hasPrice = array_key_exists('price', $item) && $item['price'] !== null && $item['price'] !== '';
+            $hasSubtotal = array_key_exists('subtotal_invoice', $item) && $item['subtotal_invoice'] !== null && $item['subtotal_invoice'] !== '';
+            if (!$hasPrice && !$hasSubtotal) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tiap item wajib mengirim price atau subtotal_invoice.'
+                ], 422);
+            }
+        }
 
         $requestPurchase = RequestPurchase::find($id);
 
@@ -465,11 +479,15 @@ class ProcurementController extends Controller
                 $detailRequest = $validItems->firstWhere('id', $item['detail_request_id']);
                 if (!$detailRequest) continue;
 
-                $subtotal = (int) $item['price'] * (int) $item['quantity'];
+                // subtotal_invoice (total per item dari user) adalah source of
+                // truth; price × qty hanya fallback utk backward-compat.
+                $subtotal = (array_key_exists('subtotal_invoice', $item) && $item['subtotal_invoice'] !== null)
+                    ? (int) $item['subtotal_invoice']
+                    : (int) ($item['price'] ?? 0) * (int) $item['quantity'];
                 $totalPrice += $subtotal;
                 $itemData[] = [
                     'detail_request' => $detailRequest,
-                    'price' => (int) $item['price'],
+                    'price' => (int) ($item['price'] ?? 0),
                     'quantity' => (int) $item['quantity'],
                     'subtotal' => $subtotal,
                 ];
@@ -577,9 +595,24 @@ class ProcurementController extends Controller
             'notes' => 'nullable|string',
             'items' => 'nullable|array',
             'items.*.detail_invoice_id' => 'required_with:items|exists:detail_invoices,id',
-            'items.*.price' => 'required_with:items|numeric|min:0',
+            'items.*.price' => 'nullable|numeric|min:0',
+            'items.*.subtotal_invoice' => 'nullable|numeric|min:0',
             'items.*.quantity' => 'required_with:items|numeric|min:1',
         ]);
+
+        // Minimal salah satu dari price / subtotal_invoice wajib ada per item.
+        if ($request->has('items')) {
+            foreach ($request->items as $item) {
+                $hasPrice = array_key_exists('price', $item) && $item['price'] !== null && $item['price'] !== '';
+                $hasSubtotal = array_key_exists('subtotal_invoice', $item) && $item['subtotal_invoice'] !== null && $item['subtotal_invoice'] !== '';
+                if (!$hasPrice && !$hasSubtotal) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Tiap item wajib mengirim price atau subtotal_invoice.'
+                    ], 422);
+                }
+            }
+        }
 
         return DB::transaction(function () use ($invoice, $request) {
             if ($request->filled('supplier_id')) {
@@ -604,7 +637,11 @@ class ProcurementController extends Controller
                     $detail = $invoice->detailInvoices
                         ->firstWhere('id', $item['detail_invoice_id']);
                     if (!$detail) continue;
-                    $subtotal = (int) $item['price'] * (int) $item['quantity'];
+                    // subtotal_invoice (total per item dari user) adalah source of
+                    // truth; price × qty hanya fallback utk backward-compat.
+                    $subtotal = (array_key_exists('subtotal_invoice', $item) && $item['subtotal_invoice'] !== null)
+                        ? (int) $item['subtotal_invoice']
+                        : (int) ($item['price'] ?? 0) * (int) $item['quantity'];
                     $detail->update([
                         'quantity_product' => $item['quantity'],
                         'subtotal_invoice' => $subtotal,
