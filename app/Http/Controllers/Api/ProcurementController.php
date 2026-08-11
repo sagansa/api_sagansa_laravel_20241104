@@ -1226,4 +1226,152 @@ class ProcurementController extends Controller
             ], 201);
         });
     }
+
+    /**
+     * Hapus invoice (Admin & Super Admin only).
+     *
+     * Safety: invoice yang sudah dibayar (payment_status '2') tidak bisa
+     * dihapus untuk melindungi data keuangan. Invoice draft boleh dihapus:
+     * pivot payment_receipt / closing_store di-detach, lalu status DetailRequest
+     * yang sudah di-invoice ('2') dikembalikan ke approved ('4') sehingga item
+     * bisa di-invoice-kan ulang (membalik boot hook DetailInvoice::created).
+     *
+     * Super Admin dapat menghapus invoice dalam kondisi apapun (termasuk yang
+     * sudah dibayar) untuk keperluan cleanup data trial.
+     */
+    public function destroyInvoice($id, Request $request)
+    {
+        $user = $request->user();
+        if (!$user->hasRole('admin') && !$user->hasRole('super_admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk menghapus invoice.'
+            ], 403);
+        }
+
+        $isSuperAdmin = $user->hasRole('super_admin');
+
+        $invoice = InvoicePurchase::with('detailInvoices')->find($id);
+
+        if (!$invoice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice tidak ditemukan.'
+            ], 404);
+        }
+
+        // Loose comparison: payment_status bisa string '1'/'2' (lihat casts).
+        // Super Admin boleh menghapus invoice yang sudah dibayar (force delete).
+        if (!$isSuperAdmin && $invoice->payment_status == '2') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice sudah dibayar dan tidak dapat dihapus.'
+            ], 400);
+        }
+
+        return DB::transaction(function () use ($invoice) {
+            // Lepas pivot agar tidak ada dangling rows.
+            $invoice->paymentReceipts()->detach();
+            $invoice->closingStores()->detach();
+
+            // Revert status DetailRequest child dari invoiced ('2') kembali ke
+            // approved ('4') — kebalikan dari boot hook DetailInvoice::created.
+            foreach ($invoice->detailInvoices as $detail) {
+                if ($detail->detail_request_id) {
+                    DetailRequest::where('id', $detail->detail_request_id)
+                        ->where('status', '2')
+                        ->update(['status' => '4']);
+                }
+            }
+
+            $invoice->detailInvoices()->delete();
+            $invoice->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Invoice berhasil dihapus.'
+            ]);
+        });
+    }
+
+    /**
+     * Hapus request purchase beserta seluruh item-nya (Admin & Super Admin only).
+     *
+     * Safety: bila ada DetailRequest yang sudah menjadi invoice, hapus ditolak
+     * agar DetailInvoice tidak jadi orphan — user harus menghapus invoice
+     * terlebih dahulu.
+     *
+     * Super Admin dapat menghapus request dalam kondisi apapun; seluruh
+     * DetailInvoice yang terhubung akan dihapus cascade bersama pivot-nya
+     * (untuk keperluan cleanup data trial).
+     */
+    public function destroyRequest($id, Request $request)
+    {
+        $user = $request->user();
+        if (!$user->hasRole('admin') && !$user->hasRole('super_admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk menghapus request.'
+            ], 403);
+        }
+
+        $isSuperAdmin = $user->hasRole('super_admin');
+
+        $requestPurchase = RequestPurchase::with('detailRequests.detailInvoices')->find($id);
+
+        if (!$requestPurchase) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Request tidak ditemukan.'
+            ], 404);
+        }
+
+        $hasInvoiced = $requestPurchase->detailRequests
+            ->contains(fn ($dr) => $dr->detailInvoices->isNotEmpty());
+
+        if ($hasInvoiced && !$isSuperAdmin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Request sudah memiliki invoice, hapus invoice terlebih dahulu.'
+            ], 400);
+        }
+
+        return DB::transaction(function () use ($requestPurchase, $isSuperAdmin) {
+            // Super Admin: hapus cascade seluruh invoice yang terhubung agar
+            // tidak ada orphan DetailInvoice/PaymentReceipt.
+            if ($isSuperAdmin) {
+                $invoiceIds = $requestPurchase->detailRequests
+                    ->flatMap(fn ($dr) => $dr->detailInvoices->pluck('invoice_purchase_id'))
+                    ->filter()
+                    ->unique();
+
+                foreach ($invoiceIds as $invoiceId) {
+                    $inv = InvoicePurchase::with('detailInvoices')->find($invoiceId);
+                    if (!$inv) continue;
+
+                    $inv->paymentReceipts()->detach();
+                    $inv->closingStores()->detach();
+
+                    foreach ($inv->detailInvoices as $detail) {
+                        if ($detail->detail_request_id) {
+                            DetailRequest::where('id', $detail->detail_request_id)
+                                ->where('status', '2')
+                                ->update(['status' => '4']);
+                        }
+                    }
+
+                    $inv->detailInvoices()->delete();
+                    $inv->delete();
+                }
+            }
+
+            $requestPurchase->detailRequests()->delete();
+            $requestPurchase->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Request berhasil dihapus.'
+            ]);
+        });
+    }
 }

@@ -91,7 +91,7 @@ class SalesOrderController extends Controller
                 ->get();
 
             $order->items = $items;
-            $order->image_delivery_url = $this->getStorageUrl($order->image_delivery);
+            $this->resolveImageDeliveryFields($order);
             $order->image_payment_url = $this->getStorageUrl($order->image_payment);
             $this->appendPaymentProofPrintStatus($order);
 
@@ -185,7 +185,7 @@ class SalesOrderController extends Controller
                 ->get();
 
             $order->items = $items;
-            $order->image_delivery_url = $this->getStorageUrl($order->image_delivery);
+            $this->resolveImageDeliveryFields($order);
             $order->image_payment_url = $this->getStorageUrl($order->image_payment);
             $this->appendPaymentProofPrintStatus($order);
             return $order;
@@ -391,6 +391,27 @@ class SalesOrderController extends Controller
         if (is_array($decoded)) return array_values(array_filter($decoded, fn ($p) => filled($p)));
         // String tunggal (legacy).
         return [$raw];
+    }
+
+    /**
+     * Resolve `image_delivery` (JSON array path) menjadi URL absolut.
+     *
+     * Mengisi dua field agar kompatibel dengan konsumer lama maupun baru:
+     * - `image_delivery_urls`: array URL lengkap (konsisten dgn response
+     *   `updateDelivery()` yang sudah memakai field plural).
+     * - `image_delivery_url`: URL pertama (untuk konsumer lama yang membaca
+     *   field singular). Null bila kosong.
+     *
+     * Sebelumnya `search()` me-resolve raw JSON string utuh sebagai satu path
+     * → menghasilkan URL rusak (mis. `.../storage/["images/..."]`) yang
+     * menyebabkan image load gagal / force-close di client.
+     */
+    private function resolveImageDeliveryFields($order): void
+    {
+        $paths = $this->decodeImagePaths($order->image_delivery);
+        $urls = array_map(fn ($p) => $this->getStorageUrl($p), $paths);
+        $order->image_delivery_urls = $urls;
+        $order->image_delivery_url = $urls[0] ?? null;
     }
 
     public function markReadyToShip(Request $request)
