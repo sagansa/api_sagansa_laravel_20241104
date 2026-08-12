@@ -189,6 +189,28 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\Api\StorageStockController::class, 'show']);
     });
 
+    // Store Consumption (konsumsi bahan toko) — stock_cards for=store_consumption.
+    Route::prefix('store-consumptions')->group(function () {
+        Route::get('/products', [\App\Http\Controllers\Api\StoreConsumptionController::class, 'products']);
+        Route::get('/', [\App\Http\Controllers\Api\StoreConsumptionController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\StoreConsumptionController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\StoreConsumptionController::class, 'show']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\StoreConsumptionController::class, 'update']);
+        // Admin only — di-guard di dalam controller.
+        Route::patch('/{id}/status', [\App\Http\Controllers\Api\StoreConsumptionController::class, 'updateStatus']);
+    });
+
+    // Employee Consumption (sisa stok karyawan) — stock_cards for=employee_consumption.
+    Route::prefix('employee-consumptions')->group(function () {
+        Route::get('/products', [\App\Http\Controllers\Api\EmployeeConsumptionController::class, 'products']);
+        Route::get('/', [\App\Http\Controllers\Api\EmployeeConsumptionController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\EmployeeConsumptionController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\EmployeeConsumptionController::class, 'show']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\EmployeeConsumptionController::class, 'update']);
+        // Admin only — di-guard di dalam controller.
+        Route::patch('/{id}/status', [\App\Http\Controllers\Api\EmployeeConsumptionController::class, 'updateStatus']);
+    });
+
     Route::prefix('transfer-stocks')->group(function () {
         Route::get('/products', [\App\Http\Controllers\Api\TransferStockController::class, 'products']);
         Route::get('/', [\App\Http\Controllers\Api\TransferStockController::class, 'index']);
@@ -231,6 +253,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'show']);
         Route::post('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'update']);
         Route::delete('/{utilityUsage}', [\App\Http\Controllers\Api\UtilityUsageController::class, 'destroy']);
+    });
+
+    Route::prefix('utility-bills')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\UtilityBillController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\UtilityBillController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\UtilityBillController::class, 'show']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\UtilityBillController::class, 'update']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\UtilityBillController::class, 'destroy']);
     });
 
     Route::prefix('readiness')->group(function () {
