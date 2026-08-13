@@ -21,17 +21,24 @@ class UtilityController extends Controller
 
         $utilities = $query
             ->orderBy('number', 'asc')
-            ->select('id', 'number', 'name', 'store_id', 'utility_provider_id', 'unit_id', 'category')
+            ->select('id', 'number', 'name', 'store_id', 'utility_provider_id', 'unit_id', 'category', 'status', 'pre_post')
             ->get();
 
         $data = $utilities->map(function ($utility) {
             return [
                 'id' => $utility->id,
-                'utility_name' => $utility->utility_name,
-                'unit' => $utility->unit?->unit,
-                'unit_id' => $utility->unit_id,
+                'number' => $utility->number,
+                'name' => $utility->name,
+                'status' => (int) $utility->status,
+                'pre_post' => (int) $utility->pre_post,
                 'category' => (int) $utility->category,
                 'store_id' => $utility->store_id,
+                'store_nickname' => $utility->store?->nickname,
+                'utility_provider_id' => $utility->utility_provider_id,
+                'utility_provider_name' => $utility->utilityProvider?->name,
+                'unit_id' => $utility->unit_id,
+                'unit' => $utility->unit?->unit,
+                'utility_name' => $utility->utility_name,
             ];
         });
 
