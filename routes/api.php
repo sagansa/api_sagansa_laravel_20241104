@@ -376,12 +376,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('presences/export/history', [AdminReportController::class, 'getExportHistory']);
         Route::delete('presences/export/{jobId}', [AdminPresenceController::class, 'cancelExport']);
 
-        // Leave management routes
-        Route::get('leaves', [AdminLeaveController::class, 'index']);
-        Route::get('leaves/{id}', [AdminLeaveController::class, 'show']);
-        Route::post('leaves/{id}/approve', [AdminLeaveController::class, 'approve']);
-        Route::post('leaves/{id}/reject', [AdminLeaveController::class, 'reject']);
-        Route::post('leaves/export', [AdminLeaveController::class, 'export']);
+        // Leave management routes — bungkus dengan middleware 'admin' agar hanya
+        // role admin yang bisa melihat semua pengajuan + approve/reject/export.
+        // Sebelumnya hanya auth:sanctum, sehingga non-admin bisa mengaksesnya.
+        Route::middleware('admin')->group(function () {
+            Route::get('leaves', [AdminLeaveController::class, 'index']);
+            Route::get('leaves/{id}', [AdminLeaveController::class, 'show']);
+            Route::post('leaves/{id}/approve', [AdminLeaveController::class, 'approve']);
+            Route::post('leaves/{id}/reject', [AdminLeaveController::class, 'reject']);
+            Route::post('leaves/export', [AdminLeaveController::class, 'export']);
+        });
 
         // Employee location tracking (admin)
         // Bungkus rute sensitif dengan middleware 'admin' untuk memastikan
