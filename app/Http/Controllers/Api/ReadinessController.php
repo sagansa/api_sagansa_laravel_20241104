@@ -21,14 +21,23 @@ class ReadinessController extends Controller
         $user = Auth::user();
         $userId = $this->resolvePresenceUserId($user);
 
+        $perPage = max(1, (int) $request->input('per_page', 15));
+
         $readinesses = Readiness::with(['createdBy:id,name'])
             ->where('created_by_id', $userId)
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->paginate($perPage);
 
         return response()->json([
             'status' => 'success',
-            'data' => $readinesses,
+            'success' => true,
+            'data' => $readinesses->items(),
+            'meta' => [
+                'current_page' => $readinesses->currentPage(),
+                'last_page' => $readinesses->lastPage(),
+                'per_page' => $readinesses->perPage(),
+                'total' => $readinesses->total(),
+            ],
         ]);
     }
 
@@ -68,6 +77,7 @@ class ReadinessController extends Controller
             ], 403);
         }
 
+        $perPage = max(1, (int) $request->input('per_page', 15));
         $date = $request->input('date');
         $query = Readiness::with(['createdBy:id,name']);
 
@@ -76,11 +86,18 @@ class ReadinessController extends Controller
             $query->whereDate('created_at', $date);
         }
 
-        $readinesses = $query->orderBy('created_at', 'desc')->get();
+        $readinesses = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         return response()->json([
             'status' => 'success',
-            'data' => $readinesses,
+            'success' => true,
+            'data' => $readinesses->items(),
+            'meta' => [
+                'current_page' => $readinesses->currentPage(),
+                'last_page' => $readinesses->lastPage(),
+                'per_page' => $readinesses->perPage(),
+                'total' => $readinesses->total(),
+            ],
         ]);
     }
 
