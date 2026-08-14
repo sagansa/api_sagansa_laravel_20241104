@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\AdminLeaveController;
 use App\Http\Controllers\Api\AdminReportController;
 use App\Http\Controllers\Api\AdminTrackLocationController;
 use App\Http\Controllers\Api\MediaController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\AssetCategoryController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AssetCheckController;
@@ -95,8 +96,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Employee location tracking (mobile ingestion)
     Route::post('/location', [LocationController::class, 'store']);
-    Route::post('/device-tokens', [LocationController::class, 'registerToken']);
-    Route::delete('/device-tokens', [LocationController::class, 'deregisterToken']);
+        Route::post('/device-tokens', [LocationController::class, 'registerToken']);
+        Route::delete('/device-tokens', [LocationController::class, 'deregisterToken']);
+
+        // Notification center (bell icon + daftar notifikasi).
+        Route::prefix('notifications')->group(function () {
+            Route::get('/', [NotificationController::class, 'index']);
+            Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+            Route::post('/read-all', [NotificationController::class, 'markAllRead']);
+            Route::post('/{id}/read', [NotificationController::class, 'markRead']);
+        });
 
     // Sales Order Delivery Routes
     Route::get('/sales-orders/search', [\App\Http\Controllers\Api\SalesOrderController::class, 'search']);

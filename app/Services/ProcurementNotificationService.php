@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\InvoicePurchase;
+use App\Models\Notification;
 use App\Models\PaymentReceipt;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -33,14 +34,14 @@ class ProcurementNotificationService
      */
     public function notifyInvoiceTransferCreated(InvoicePurchase $invoice, int $creatorId): int
     {
-        // Kandidat: semua admin/super_admin yang punya device token terdaftar.
+        // Kandidat: semua admin/super_admin (kecuali pembuat).
         $candidateIds = User::role(['admin', 'super_admin'])
             ->pluck('id')
             ->all();
 
         $recipientIds = array_values(array_filter(
             $candidateIds,
-            fn ($id) => (int) $id !== $creatorId && $this->fcm->hasDevice((int) $id),
+            fn ($id) => (int) $id !== $creatorId,
         ));
 
         if (empty($recipientIds)) {
@@ -61,7 +62,22 @@ class ProcurementNotificationService
             'body' => $body,
         ];
 
-        return $this->sendToRecipients($recipientIds, $payload);
+        // Tulis row notifikasi (persist) untuk tiap resipien — gagal tulis
+        // tidak mengganggu FCM maupun request utama.
+        $this->persistForRecipients($recipientIds, [
+            'type' => 'invoice_transfer_created',
+            'title' => 'Invoice Transfer Baru',
+            'body' => $body,
+            'data' => ['invoice_id' => (string) $invoice->id],
+        ]);
+
+        // Kirim FCM hanya ke resipien yang punya device terdaftar.
+        $fcmRecipients = array_values(array_filter(
+            $recipientIds,
+            fn ($id) => $this->fcm->hasDevice((int) $id),
+        ));
+
+        return $this->sendToRecipients($fcmRecipients, $payload);
     }
 
     /**
@@ -78,7 +94,7 @@ class ProcurementNotificationService
         $payerId = $receipt->user_id;
         $recipientIds = array_values(array_filter(
             array_unique($creatorIds),
-            fn ($id) => is_numeric($id) && (int) $id !== (int) $payerId && $this->fcm->hasDevice((int) $id),
+            fn ($id) => is_numeric($id) && (int) $id !== (int) $payerId,
         ));
 
         if (empty($recipientIds)) {
@@ -103,7 +119,25 @@ class ProcurementNotificationService
             'body' => "Pembayaran {$label} via transfer sejumlah {$amount} telah dibayar.",
         ];
 
-        return $this->sendToRecipients($recipientIds, $payload);
+        // Tulis row notifikasi (persist) untuk tiap resipien — gagal tulis
+        // tidak mengganggu FCM maupun request utama.
+        $this->persistForRecipients($recipientIds, [
+            'type' => 'payment_receipt_paid',
+            'title' => 'Pembayaran Telah Dilakukan',
+            'body' => "Pembayaran {$label} via transfer sejumlah {$amount} telah dibayar.",
+            'data' => [
+                'receipt_id' => (string) $receipt->id,
+                'payment_for' => (string) $receipt->payment_for,
+            ],
+        ]);
+
+        // Kirim FCM hanya ke resipien yang punya device terdaftar.
+        $fcmRecipients = array_values(array_filter(
+            $recipientIds,
+            fn ($id) => $this->fcm->hasDevice((int) $id),
+        ));
+
+        return $this->sendToRecipients($fcmRecipients, $payload);
     }
 
     /**
@@ -149,6 +183,35 @@ class ProcurementNotificationService
         }
 
         return $sent;
+    }
+
+    /**
+     * Tulis satu row notifikasi ke tabel `notifications` per resipien.
+     * Dibungkus try/catch terpisah — kegagalan insert tidak boleh
+     * mengganggu pengiriman FCM maupun request utama.
+     *
+     * @param array<int> $recipientIds
+     * @param array{type:string,title:string,body:string,data:array} $entry
+     */
+    protected function persistForRecipients(array $recipientIds, array $entry): void
+    {
+        foreach ($recipientIds as $userId) {
+            try {
+                Notification::create([
+                    'user_id' => (int) $userId,
+                    'type' => $entry['type'],
+                    'title' => $entry['title'],
+                    'body' => $entry['body'],
+                    'data' => $entry['data'] ?? null,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('ProcurementNotification: gagal tulis row notifikasi.', [
+                    'type' => $entry['type'] ?? null,
+                    'user_id' => $userId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
