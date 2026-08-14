@@ -247,6 +247,12 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::get('/utilities', [\App\Http\Controllers\Api\UtilityController::class, 'index']);
+    // Lookup untuk form utility (toko, satuan, provider).
+    Route::get('/utilities/lookups', [\App\Http\Controllers\Api\UtilityController::class, 'lookups']);
+    // CRUD utility — khusus admin/super_admin (dicek di controller).
+    Route::post('/utilities', [\App\Http\Controllers\Api\UtilityController::class, 'store']);
+    Route::put('/utilities/{id}', [\App\Http\Controllers\Api\UtilityController::class, 'update']);
+    Route::patch('/utilities/{id}/status', [\App\Http\Controllers\Api\UtilityController::class, 'updateStatus']);
     Route::prefix('utility-usages')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\UtilityUsageController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\UtilityUsageController::class, 'store']);

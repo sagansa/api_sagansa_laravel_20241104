@@ -12,6 +12,7 @@ use App\Models\Asset;
 use App\Models\PaymentReceipt;
 use App\Models\DailySalary;
 use App\Models\FuelService;
+use App\Services\ProcurementNotificationService;
 use App\Services\QrisService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,10 @@ use Illuminate\Support\Facades\Validator;
 
 class ProcurementController extends Controller
 {
+    public function __construct(protected ProcurementNotificationService $procurementNotification)
+    {
+    }
+
     /**
      * Get list of products for creating request purchase.
      */
@@ -472,7 +477,7 @@ class ProcurementController extends Controller
         }
 
         // Check for duplicate items from different requests (already scoped by request id)
-        return DB::transaction(function () use ($requestPurchase, $validItems, $request) {
+        $result = DB::transaction(function () use ($requestPurchase, $validItems, $request) {
             $totalPrice = 0;
             $itemData = [];
             foreach ($request->items as $item) {
@@ -548,14 +553,28 @@ class ProcurementController extends Controller
                 }
             }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Invoice berhasil dibuat.'
-                    . ($assetsCreated > 0 ? " {$assetsCreated} aset baru otomatis tercatat." : ''),
-                'invoice_id' => $invoice->id,
+            return [
+                'invoice' => $invoice,
                 'assets_created' => $assetsCreated,
-            ]);
+            ];
         });
+
+        // Push only untuk invoice Transfer (payment_type_id == 1), di luar
+        // transaction agar kegagalan FCM tidak me-rollback invoice.
+        if ((int) $result['invoice']->payment_type_id === 1) {
+            $this->procurementNotification->notifyInvoiceTransferCreated(
+                $result['invoice'],
+                $request->user()->id
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Invoice berhasil dibuat.'
+                . ($result['assets_created'] > 0 ? " {$result['assets_created']} aset baru otomatis tercatat." : ''),
+            'invoice_id' => $result['invoice']->id,
+            'assets_created' => $result['assets_created'],
+        ]);
     }
 
     public function updateInvoice($id, Request $request)
@@ -824,7 +843,9 @@ class ProcurementController extends Controller
 
         $paymentFor = $request->input('payment_for', '3');
 
-        if ($paymentFor === '2') {
+        // Loose comparison: client multipart mengirim string '2', client JSON
+        // mengirim int 2.
+        if ($paymentFor == '2') {
             return $this->storeDailySalaryPaymentReceipt($request);
         }
 
@@ -849,7 +870,7 @@ class ProcurementController extends Controller
             }
         }
 
-        return DB::transaction(function () use ($request, $invoiceIds, $invoices) {
+        $receipt = DB::transaction(function () use ($request, $invoiceIds, $invoices) {
             $totalAmount = $request->total_amount ?? $invoices->sum('total_price');
             $firstInvoice = $invoices->first();
 
@@ -876,12 +897,17 @@ class ProcurementController extends Controller
                 $inv->update(['payment_status' => '2']);
             }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Payment receipt berhasil dibuat.',
-                'data' => $receipt->load('invoicePurchases')
-            ], 201);
+            return $receipt;
         });
+
+        // Di luar transaction: kegagalan FCM tidak boleh membatalkan pembayaran.
+        $this->procurementNotification->notifyPaymentReceiptPaid($receipt);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment receipt berhasil dibuat.',
+            'data' => $receipt->load('invoicePurchases')
+        ], 201);
     }
 
     /**
@@ -912,7 +938,7 @@ class ProcurementController extends Controller
             }
         }
 
-        return DB::transaction(function () use ($request, $dailySalaryIds, $salaries) {
+        $receipt = DB::transaction(function () use ($request, $dailySalaryIds, $salaries) {
             $totalAmount = $request->total_amount ?? $salaries->sum('amount');
 
             $imagePath = null;
@@ -937,12 +963,17 @@ class ProcurementController extends Controller
                 $salary->update(['status' => '2']);
             }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Payment receipt gaji berhasil dibuat.',
-                'data' => $receipt->load('dailySalaries')
-            ], 201);
+            return $receipt;
         });
+
+        // Di luar transaction: kegagalan FCM tidak boleh membatalkan pembayaran.
+        $this->procurementNotification->notifyPaymentReceiptPaid($receipt);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment receipt gaji berhasil dibuat.',
+            'data' => $receipt->load('dailySalaries')
+        ], 201);
     }
 
     /**
@@ -997,7 +1028,7 @@ class ProcurementController extends Controller
             }
         }
 
-        return DB::transaction(function () use ($request, $fuelServiceIds, $fuelServices) {
+        $receipt = DB::transaction(function () use ($request, $fuelServiceIds, $fuelServices) {
             $totalAmount = $request->total_amount ?? $fuelServices->sum('amount');
 
             $imagePath = null;
@@ -1049,12 +1080,17 @@ class ProcurementController extends Controller
                     ->all(),
             ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Payment receipt berhasil dibuat.',
-                'data' => $receipt->load('fuelServices')
-            ], 201);
+            return $receipt;
         });
+
+        // Di luar transaction: kegagalan FCM tidak boleh membatalkan pembayaran.
+        $this->procurementNotification->notifyPaymentReceiptPaid($receipt);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment receipt berhasil dibuat.',
+            'data' => $receipt->load('fuelServices')
+        ], 201);
     }
 
     /**
@@ -1220,7 +1256,7 @@ class ProcurementController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        return DB::transaction(function () use ($request, $user) {
+        $invoice = DB::transaction(function () use ($request, $user) {
             $totalPrice = 0;
             foreach ($request->items as $item) {
                 $totalPrice += (int) $item['subtotal_invoice'];
@@ -1253,15 +1289,26 @@ class ProcurementController extends Controller
                 ]);
             }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Invoice berhasil dibuat.',
-                'data' => $invoice->load([
-                    'store', 'supplier', 'createdBy',
-                    'detailInvoices.detailRequest.product.unit',
-                ]),
-            ], 201);
+            return $invoice;
         });
+
+        // Push only untuk invoice Transfer (payment_type_id == 1), di luar
+        // transaction agar kegagalan FCM tidak me-rollback invoice.
+        if ((int) $invoice->payment_type_id === 1) {
+            $this->procurementNotification->notifyInvoiceTransferCreated(
+                $invoice,
+                $user->id
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Invoice berhasil dibuat.',
+            'data' => $invoice->load([
+                'store', 'supplier', 'createdBy',
+                'detailInvoices.detailRequest.product.unit',
+            ]),
+        ], 201);
     }
 
     /**
