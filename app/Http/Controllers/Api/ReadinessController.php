@@ -158,6 +158,34 @@ class ReadinessController extends Controller
         }
     }
 
+    /**
+     * Ubah status kesiapan diri (admin/super_admin).
+     * Status: 1 = belum diperiksa, 2 = sudah diperiksa.
+     */
+    public function updateStatus(Request $request, $id)
+    {
+        $user = Auth::user();
+        if (!$user || !$user->hasAnyRole(['admin', 'super_admin'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Akses ditolak.',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'status' => ['required', 'in:1,2'],
+        ]);
+
+        $readiness = Readiness::findOrFail($id);
+        $readiness->update(['status' => $data['status']]);
+
+        return response()->json([
+            'status' => 'success',
+            'success' => true,
+            'data' => $readiness->fresh(['createdBy:id,name']),
+        ]);
+    }
+
     private function resolvePresenceUserId($authUser): int
     {
         $presenceUserId = DB::table('users')

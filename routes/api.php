@@ -271,6 +271,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/admin', [\App\Http\Controllers\Api\ReadinessController::class, 'adminIndex']);
         Route::get('/status', [\App\Http\Controllers\Api\ReadinessController::class, 'checkStatus']);
         Route::post('/', [\App\Http\Controllers\Api\ReadinessController::class, 'store']);
+        // Ubah status kesiapan diri (admin/super_admin).
+        Route::patch('{id}/status', [\App\Http\Controllers\Api\ReadinessController::class, 'updateStatus']);
     });
 
     Route::prefix('hygiene')->group(function () {
