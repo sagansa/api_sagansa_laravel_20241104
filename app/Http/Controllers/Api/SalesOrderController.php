@@ -244,6 +244,96 @@ class SalesOrderController extends Controller
         ]);
     }
 
+    /**
+     * Tetapkan status bayar &/atau toko untuk order direct (for=1) yang
+     * dibuat tanpa store. Khusus admin — menggantikan alur "hubungi admin
+     * backend" dari mobile. Tidak boleh dilakukan saat order sudah terkirim
+     * (delivery_status 3) dan pembayaran sudah valid (payment_status 2).
+     */
+    public function assign(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user->hasRole('admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya admin yang dapat menetapkan toko/status bayar.'
+            ], 403);
+        }
+
+        $order = DB::table('sales_orders')
+            ->where('id', $id)
+            ->where('for', '1')
+            ->whereNull('deleted_at')
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order tidak ditemukan.'
+            ], 404);
+        }
+
+        // Loose comparison: delivery_status/payment_status bisa string maupun int.
+        if ((int) $order->delivery_status === 3 && (int) $order->payment_status === 2) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order sudah terkirim dan pembayaran sudah valid sehingga tidak dapat diubah.'
+            ], 400);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'payment_status' => 'nullable|in:1,2,3,4',
+            'store_id' => 'nullable|exists:stores,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Minimal salah satu field harus dikirim.
+        if (!$request->filled('payment_status') && !$request->filled('store_id')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Minimal salah satu dari status bayar atau toko harus dikirim.'
+            ], 422);
+        }
+
+        $updateData = [
+            'assigned_by_id' => $user->id,
+            'updated_at' => now(),
+        ];
+
+        if ($request->filled('payment_status')) {
+            $updateData['payment_status'] = $request->input('payment_status');
+        }
+
+        if ($request->filled('store_id')) {
+            $updateData['store_id'] = $request->input('store_id');
+        }
+
+        DB::table('sales_orders')
+            ->where('id', $id)
+            ->update($updateData);
+
+        // Kembalikan order yang sudah diperkaya agar mobile langsung
+        // memperbarui tampilan (payment_status, store_id, store_name, dsb.).
+        $updatedOrder = $this->orderRowQuery()
+            ->where('sales_orders.id', $id)
+            ->whereNull('sales_orders.deleted_at')
+            ->first();
+        $this->enrichOrder($updatedOrder);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Toko & status bayar berhasil diperbarui.',
+            'data' => $updatedOrder,
+        ]);
+    }
+
     public function updateDelivery(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -666,6 +756,7 @@ class SalesOrderController extends Controller
             ->select([
                 'sales_orders.id',
                 'sales_orders.receipt_no',
+                'sales_orders.store_id',
                 'sales_orders.delivery_status',
                 'sales_orders.received_by',
                 'sales_orders.image_delivery',

@@ -329,7 +329,7 @@ class ProcurementController extends Controller
     public function showInvoice($id, Request $request)
     {
         $invoice = InvoicePurchase::with([
-            'store', 'supplier', 'createdBy',
+            'store', 'supplier.bank', 'createdBy',
             'detailInvoices.detailRequest.product.unit',
             'detailInvoices.detailRequest.paymentType',
         ])->find($id);
@@ -824,6 +824,61 @@ class ProcurementController extends Controller
     }
 
     /**
+     * Get QRIS payload for an invoice purchase (nominal = total invoice).
+     */
+    public function invoiceQris($id, Request $request)
+    {
+        if ($request->user()->hasRole('staff')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk generate QRIS.'
+            ], 403);
+        }
+
+        $invoice = InvoicePurchase::with('supplier')->find($id);
+
+        if (!$invoice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice tidak ditemukan.'
+            ], 404);
+        }
+
+        if (!$invoice->supplier || !$invoice->supplier->qris) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Supplier tidak memiliki data QRIS.'
+            ], 400);
+        }
+
+        try {
+            $qrisService = app(QrisService::class);
+            $dynamicPayload = $qrisService->generateDynamicPayload(
+                $invoice->supplier->qris,
+                $invoice->total_price ?? 0
+            );
+
+            $parsed = $qrisService->parsePayload($invoice->supplier->qris);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'payload' => $dynamicPayload,
+                    'merchant_name' => $parsed['merchant_name'] ?? null,
+                    'merchant_nmid' => $qrisService->getMerchantNmid($parsed),
+                    'amount' => $invoice->total_price,
+                    'raw_supplier_qris' => $invoice->supplier->qris,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal generate QRIS: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Create a new payment receipt for invoice purchases.
      */
     public function storePaymentReceipt(Request $request)
@@ -928,9 +983,10 @@ class ProcurementController extends Controller
     /**
      * Create a payment receipt untuk daily salary (transfer payment).
      *
-     * payment_for = '2' (DailySalary). Daily salary harus status '3' (siap
-     * dibayar) dan metode Transfer, lalu di-update menjadi '2' (dibayar)
-     * setelah receipt dibuat (mirip invoice yang berubah payment_status).
+     * payment_for = '2' (DailySalary). Daily salary harus berstatus '1'
+     * (belum dibayar) atau '3' (siap dibayar) dan metode Transfer, lalu
+     * di-update menjadi '2' (dibayar) setelah receipt dibuat (mirip invoice
+     * yang berubah payment_status).
      */
     private function storeDailySalaryPaymentReceipt(Request $request)
     {
@@ -939,10 +995,10 @@ class ProcurementController extends Controller
         $salaries = DailySalary::whereIn('id', $dailySalaryIds)->get();
 
         foreach ($salaries as $salary) {
-            if ($salary->status != '3') {
+            if (!in_array($salary->status, ['1', '3'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Daily salary #{$salary->id} belum siap dibayar (status: {$salary->status})."
+                    'message' => "Daily salary #{$salary->id} tidak dapat dibayar (status saat ini tidak diizinkan)."
                 ], 400);
             }
             if ($salary->payment_type_id != 1) {

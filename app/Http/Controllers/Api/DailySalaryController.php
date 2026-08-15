@@ -95,14 +95,15 @@ class DailySalaryController extends Controller
     }
 
     /**
-     * Get daily salaries for payment receipt (transfer type, status 3 = siap dibayar)
+     * Get daily salaries for payment receipt (transfer type, status 1 = belum
+     * dibayar atau 3 = siap dibayar)
      */
     public function forPayment(Request $request)
     {
         $user = $request->user();
         $query = DailySalary::with(['createdBy', 'store', 'paymentType'])
             ->where('payment_type_id', 1) // Transfer
-            ->where('status', '3') // Siap dibayar
+            ->whereIn('status', ['1', '3']) // Belum dibayar / siap dibayar
             ->whereDoesntHave('paymentReceipts');
 
         // Non-admin only sees their own

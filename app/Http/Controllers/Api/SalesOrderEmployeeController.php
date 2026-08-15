@@ -18,10 +18,15 @@ use Illuminate\Support\Facades\Validator;
  * Penjualan oleh Sales (sales_orders.for = 2).
  *
  * Pemetaan role:
- *  - `sales`         : CRUD milik sendiri (ordered_by_id = Auth::id()).
+ *  - `sales` (AKTIF — bukan `former-employee`): CRUD milik sendiri
+ *                     (ordered_by_id = Auth::id()).
  *                     Edit/hapus hanya jika payment_status != 2 (sudah valid).
  *  - `admin/super_admin`: lihat SEMUA order, filter per sales, set
  *                     payment_status, hapus order apapun. Tidak bisa create.
+ *  - `sales` + `former-employee`: DITOLAK (403) di semua endpoint — mantan
+ *                     pegawai tidak boleh bertransaksi; di mobile mereka
+ *                     hanya boleh mengumpulkan data calon konsumen.
+ *  - Role lain (staff/supervisor/storage-staff): DITOLAK (403).
  *
  * Kontrak dipakai oleh mobile (mobiles/sagansa) — mengikuti SalesOrderEmployeesResource
  * di apps/admin sebagai acuan behavior.
@@ -67,11 +72,14 @@ class SalesOrderEmployeeController extends Controller
         }
 
         $user = $request->user();
+        if (!$this->canSell($user) && !$this->isAdminUser($user)) {
+            return $this->forbidden('Anda tidak memiliki akses ke penjualan employee.');
+        }
         $perPage = (int) ($request->input('per_page', 20));
 
         $query = SalesOrderEmployee::with(self::WITH)->where('for', self::FOR);
 
-        if ($user->hasRole('sales')) {
+        if ($this->canSell($user)) {
             // Sales hanya boleh melihat miliknya sendiri.
             $query->where('ordered_by_id', $user->id);
         } else {
@@ -104,7 +112,7 @@ class SalesOrderEmployeeController extends Controller
         if (!$order) {
             return $this->notFound();
         }
-        if (($err = $this->ensureSalesCanAccess($request->user(), $order)) !== null) {
+        if (($err = $this->ensureCanAccess($request->user(), $order)) !== null) {
             return $err;
         }
         return response()->json(['success' => true, 'data' => $order]);
@@ -118,8 +126,8 @@ class SalesOrderEmployeeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('sales')) {
-            return $this->forbidden('Hanya sales yang dapat membuat penjualan employee.');
+        if (!$this->canSell($user)) {
+            return $this->forbidden('Hanya sales aktif yang dapat membuat penjualan employee.');
         }
 
         $validator = Validator::make($request->all(), [
@@ -192,8 +200,8 @@ class SalesOrderEmployeeController extends Controller
     public function update(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasRole('sales')) {
-            return $this->forbidden('Hanya sales yang dapat mengubah penjualan employee.');
+        if (!$this->canSell($user)) {
+            return $this->forbidden('Hanya sales aktif yang dapat mengubah penjualan employee.');
         }
 
         $order = SalesOrderEmployee::with('detailSalesOrders')->where('for', self::FOR)->find($id);
@@ -282,13 +290,13 @@ class SalesOrderEmployeeController extends Controller
     public function destroy(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->hasAnyRole(['admin', 'super_admin']);
+        $isAdmin = $this->isAdminUser($user);
 
         $order = SalesOrderEmployee::where('for', self::FOR)->find($id);
         if (!$order) {
             return $this->notFound();
         }
-        if (!$isAdmin && $order->ordered_by_id !== $user->id) {
+        if (!$isAdmin && (!$this->canSell($user) || $order->ordered_by_id !== $user->id)) {
             return $this->forbidden('Anda tidak memiliki akses ke penjualan ini.');
         }
         if (!$isAdmin && (string) $order->payment_status === '2') {
@@ -312,7 +320,7 @@ class SalesOrderEmployeeController extends Controller
     public function updatePaymentStatus(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->hasAnyRole(['admin', 'super_admin'])) {
+        if (!$this->isAdminUser($user)) {
             return $this->forbidden('Akses ditolak.');
         }
 
@@ -350,6 +358,9 @@ class SalesOrderEmployeeController extends Controller
     public function supportingData(Request $request): JsonResponse
     {
         $user = $request->user();
+        if (!$this->canSell($user)) {
+            return $this->forbidden('Hanya sales aktif yang dapat membuat penjualan employee.');
+        }
 
         $transferToAccounts = TransferToAccount::with('bank')
             ->where('status', 1)
@@ -388,15 +399,34 @@ class SalesOrderEmployeeController extends Controller
     }
 
     /**
-     * Sales hanya boleh akses miliknya sendiri (show). Admin bebas.
+     * Sales aktif = ber-role `sales` DAN TIDAK ber-role `former-employee`.
+     * Sales + former-employee (mantan pegawai) diblokir dari penjualan —
+     * di mobile mereka hanya boleh mengumpulkan data calon konsumen.
+     */
+    private function canSell($user): bool
+    {
+        return $user->hasRole('sales') && !$user->hasRole('former-employee');
+    }
+
+    private function isAdminUser($user): bool
+    {
+        return $user->hasAnyRole(['admin', 'super_admin']);
+    }
+
+    /**
+     * Akses baca satu order (show): admin bebas; sales aktif hanya miliknya.
+     * Role lain (termasuk sales + former-employee) ditolak.
      * Mengembalikan response forbidden jika ditolak, null jika OK.
      */
-    private function ensureSalesCanAccess($user, SalesOrderEmployee $order): ?JsonResponse
+    private function ensureCanAccess($user, SalesOrderEmployee $order): ?JsonResponse
     {
-        if ($user->hasRole('sales') && $order->ordered_by_id !== $user->id) {
-            return $this->forbidden('Anda tidak memiliki akses ke penjualan ini.');
+        if ($this->isAdminUser($user)) {
+            return null;
         }
-        return null;
+        if ($this->canSell($user) && $order->ordered_by_id === $user->id) {
+            return null;
+        }
+        return $this->forbidden('Anda tidak memiliki akses ke penjualan ini.');
     }
 
     private function validationFailed($validator): JsonResponse

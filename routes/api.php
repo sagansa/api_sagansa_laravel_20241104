@@ -114,6 +114,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sales-orders/payment-proofs/printed', [\App\Http\Controllers\Api\SalesOrderController::class, 'markPaymentProofsPrinted']);
     // Ganti item order (admin only; role guard di controller).
     Route::post('/sales-orders/{id}/items', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateItems']);
+    // Tetapkan toko &/atau status bayar order direct (admin only; role guard di controller).
+    Route::post('/sales-orders/{id}/assign', [\App\Http\Controllers\Api\SalesOrderController::class, 'assign']);
 
     // Sales Order Online - Create (admin)
     Route::get('/sales-orders/online-shop-providers', [\App\Http\Controllers\Api\SalesOrderController::class, 'onlineShopProviders']);
@@ -182,6 +184,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'storeInvoice']);
         Route::get('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'invoices']);
         Route::get('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showInvoice']);
+        Route::get('/invoices/{id}/qris', [\App\Http\Controllers\Api\ProcurementController::class, 'invoiceQris']);
         Route::put('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'updateInvoice']);
         Route::post('/invoices/{id}/receive', [\App\Http\Controllers\Api\ProcurementController::class, 'receiveInvoice']);
         Route::delete('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'destroyInvoice']);
@@ -334,6 +337,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subdistricts', [\App\Http\Controllers\Api\SupplierController::class, 'subdistricts']);
     Route::get('/postal-codes', [\App\Http\Controllers\Api\SupplierController::class, 'postalCodes']);
     Route::get('/banks', [\App\Http\Controllers\Api\SupplierController::class, 'banks']);
+
+    // Calon konsumen (DeliveryAddress) — CRUD milik user login (sales).
+    // Semua query di-scope `user_id = Auth::id()` di dalam controller.
+    Route::prefix('delivery-addresses')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\DeliveryAddressController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\DeliveryAddressController::class, 'store']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\DeliveryAddressController::class, 'show']);
+        Route::put('/{id}', [\App\Http\Controllers\Api\DeliveryAddressController::class, 'update']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\DeliveryAddressController::class, 'destroy']);
+    });
 
     // Asset Management (kategorisasi produk + pemeriksaan berkala + issue).
     Route::prefix('asset-categories')->group(function () {

@@ -419,4 +419,104 @@ class ProcurementNotificationTest extends TestCase
         $res3->assertCreated();
         $this->assertContains($owner->id, $this->sentTo);
     }
+
+    // ------------------------------------------------------------------
+    // 4. Bypass status "siap dibayar": daily salary status 1 (belum dibayar)
+    //    boleh langsung dibayar; status 2 (dibayar) & 4 (perbaiki) ditolak.
+    // ------------------------------------------------------------------
+
+    public function test_payment_receipt_daily_salary_status_1_can_be_paid(): void
+    {
+        $this->ensurePaymentType(1, 'Transfer');
+
+        $payer = $this->userWithRole('admin');
+        $owner = $this->userWithRole('staff');
+        $store = $this->store();
+
+        $salary = DailySalary::create([
+            'store_id' => $store->id,
+            'amount' => 200000,
+            'payment_type_id' => 1,
+            'status' => '1', // belum dibayar → bypass langsung dibayar
+            'created_by_id' => $owner->id,
+        ]);
+
+        Sanctum::actingAs($payer);
+        $res = $this->postJson('/procurement/payment-receipts', [
+            'payment_for' => 2,
+            'daily_salary_ids' => [$salary->id],
+            'transfer_amount' => 200000,
+        ]);
+
+        $res->assertCreated();
+        $this->assertEquals('2', $salary->fresh()->status);
+        $this->assertContains($owner->id, $this->sentTo);
+        $this->assertNotContains($payer->id, $this->sentTo);
+    }
+
+    public function test_payment_receipt_daily_salary_status_3_still_works(): void
+    {
+        $this->ensurePaymentType(1, 'Transfer');
+
+        $payer = $this->userWithRole('admin');
+        $store = $this->store();
+
+        $salary = DailySalary::create([
+            'store_id' => $store->id,
+            'amount' => 200000,
+            'payment_type_id' => 1,
+            'status' => '3', // siap dibayar (regresi)
+            'created_by_id' => $payer->id,
+        ]);
+
+        Sanctum::actingAs($payer);
+        $res = $this->postJson('/procurement/payment-receipts', [
+            'payment_for' => 2,
+            'daily_salary_ids' => [$salary->id],
+            'transfer_amount' => 200000,
+        ]);
+
+        $res->assertCreated();
+        $this->assertEquals('2', $salary->fresh()->status);
+    }
+
+    public function test_payment_receipt_daily_salary_status_2_and_4_rejected(): void
+    {
+        $this->ensurePaymentType(1, 'Transfer');
+
+        $payer = $this->userWithRole('admin');
+        $store = $this->store();
+
+        foreach (['2', '4'] as $status) {
+            $salary = DailySalary::create([
+                'store_id' => $store->id,
+                'amount' => 200000,
+                'payment_type_id' => 1,
+                'status' => $status,
+                'created_by_id' => $payer->id,
+            ]);
+
+            Sanctum::actingAs($payer);
+            $res = $this->postJson('/procurement/payment-receipts', [
+                'payment_for' => 2,
+                'daily_salary_ids' => [$salary->id],
+                'transfer_amount' => 200000,
+            ]);
+
+            $res->assertStatus(400);
+            $res->assertJson([
+                'success' => false,
+            ]);
+            $res->assertJsonPath(
+                'message',
+                "Daily salary #{$salary->id} tidak dapat dibayar (status saat ini tidak diizinkan)."
+            );
+
+            // Status tidak berubah dan daily salary tidak ter-attach ke receipt manapun.
+            $this->assertEquals($status, $salary->fresh()->status);
+            $this->assertDatabaseMissing('daily_salary_payment_receipt', [
+                'daily_salary_id' => $salary->id,
+            ]);
+        }
+    }
 }

@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
 use App\Models\InvoicePurchase;
+use App\Models\Supplier;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\InvoicePurchase>
@@ -24,7 +25,7 @@ class InvoicePurchaseFactory extends Factory
             'notes' => null,
             'payment_type_id' => 1,
             'store_id' => 1,
-            'supplier_id' => null,
+            'supplier_id' => Supplier::factory(),
             'created_by_id' => null,
             'approved_by_id' => null,
         ];

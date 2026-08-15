@@ -28,6 +28,31 @@ class DeliveryAddress extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function province(): BelongsTo
+    {
+        return $this->belongsTo(Province::class);
+    }
+
+    public function city(): BelongsTo
+    {
+        return $this->belongsTo(City::class);
+    }
+
+    public function district(): BelongsTo
+    {
+        return $this->belongsTo(District::class);
+    }
+
+    public function subdistrict(): BelongsTo
+    {
+        return $this->belongsTo(Subdistrict::class);
+    }
+
+    public function postalCode(): BelongsTo
+    {
+        return $this->belongsTo(PostalCode::class);
+    }
+
     public function getDeliveryAddressNameAttribute(): ?string
     {
         if (!empty($this->name)) {
