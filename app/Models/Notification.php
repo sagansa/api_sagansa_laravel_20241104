@@ -6,8 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Notification extends Model
 {
-    // Tabel notifications berada di DB sagansa (sama dengan tabel procurement).
+    // Notification center mobile memakai tabel sendiri di DB sagansa agar
+    // tidak bentrok dengan tabel `notifications` standar Laravel yang dipakai
+    // Filament admin (notifiable_type/notifiable_id).
     protected $connection = 'mysql';
+    protected $table = 'notification_center';
 
     protected $fillable = [
         'user_id',

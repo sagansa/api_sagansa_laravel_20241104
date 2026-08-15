@@ -15,6 +15,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('location_requests')) {
+            return;
+        }
+
         Schema::create('location_requests', function (Blueprint $table) {
             $table->id();
             // Pegawai yang dilacak.

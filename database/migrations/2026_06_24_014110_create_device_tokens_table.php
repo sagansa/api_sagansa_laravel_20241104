@@ -16,6 +16,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::connection('mysql_auth')->hasTable('device_tokens')) {
+            return;
+        }
+
         Schema::connection('mysql_auth')->create('device_tokens', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id')->index();

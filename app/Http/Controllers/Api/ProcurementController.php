@@ -422,6 +422,7 @@ class ProcurementController extends Controller
             'payment_type_id' => 'nullable|integer|in:1,2',
             'taxes' => 'nullable|numeric|min:0',
             'discounts' => 'nullable|numeric|min:0',
+            'image' => 'nullable|string',
         ]);
 
         // Frontend mengirim subtotal_invoice (source of truth) atau price
@@ -513,6 +514,7 @@ class ProcurementController extends Controller
                 'supplier_id' => $request->supplier_id,
                 'taxes' => $taxes,
                 'discounts' => $discounts,
+                'image' => $request->image,
             ]);
 
             $assetsCreated = 0;
@@ -560,12 +562,21 @@ class ProcurementController extends Controller
         });
 
         // Push only untuk invoice Transfer (payment_type_id == 1), di luar
-        // transaction agar kegagalan FCM tidak me-rollback invoice.
+        // transaction agar kegagalan FCM tidak me-rollback invoice. Kegagalan
+        // notifikasi (mis. tabel device_tokens belum ada) tidak boleh
+        // menggagalkan request utama — invoice sudah tersimpan.
         if ((int) $result['invoice']->payment_type_id === 1) {
-            $this->procurementNotification->notifyInvoiceTransferCreated(
-                $result['invoice'],
-                $request->user()->id
-            );
+            try {
+                $this->procurementNotification->notifyInvoiceTransferCreated(
+                    $result['invoice'],
+                    $request->user()->id
+                );
+            } catch (\Throwable $e) {
+                Log::error('Gagal kirim notifikasi invoice transfer (createInvoice).', [
+                    'invoice_id' => $result['invoice']->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
 
         return response()->json([
@@ -612,6 +623,7 @@ class ProcurementController extends Controller
             'taxes' => 'nullable|numeric|min:0',
             'discounts' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
+            'image' => 'nullable|string',
             'items' => 'nullable|array',
             'items.*.detail_invoice_id' => 'required_with:items|exists:detail_invoices,id',
             'items.*.price' => 'nullable|numeric|min:0',
@@ -648,6 +660,9 @@ class ProcurementController extends Controller
             }
             if ($request->has('notes')) {
                 $invoice->notes = $request->notes;
+            }
+            if ($request->has('image')) {
+                $invoice->image = $request->image;
             }
 
             $totalPrice = 0;
@@ -1254,6 +1269,7 @@ class ProcurementController extends Controller
             'taxes' => 'nullable|numeric|min:0',
             'discounts' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
+            'image' => 'nullable|string',
         ]);
 
         $invoice = DB::transaction(function () use ($request, $user) {
@@ -1274,6 +1290,7 @@ class ProcurementController extends Controller
                 'taxes' => $taxes,
                 'discounts' => $discounts,
                 'notes' => $request->notes,
+                'image' => $request->image,
                 'created_by_id' => $user->id,
                 'payment_status' => '1',
                 'order_status' => '1',
@@ -1293,12 +1310,21 @@ class ProcurementController extends Controller
         });
 
         // Push only untuk invoice Transfer (payment_type_id == 1), di luar
-        // transaction agar kegagalan FCM tidak me-rollback invoice.
+        // transaction agar kegagalan FCM tidak me-rollback invoice. Kegagalan
+        // notifikasi (mis. tabel device_tokens belum ada) tidak boleh
+        // menggagalkan request utama — invoice sudah tersimpan.
         if ((int) $invoice->payment_type_id === 1) {
-            $this->procurementNotification->notifyInvoiceTransferCreated(
-                $invoice,
-                $user->id
-            );
+            try {
+                $this->procurementNotification->notifyInvoiceTransferCreated(
+                    $invoice,
+                    $user->id
+                );
+            } catch (\Throwable $e) {
+                Log::error('Gagal kirim notifikasi invoice transfer (storeInvoice).', [
+                    'invoice_id' => $invoice->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
         }
 
         return response()->json([

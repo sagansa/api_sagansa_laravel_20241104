@@ -112,12 +112,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sales-orders/ready-to-ship', [\App\Http\Controllers\Api\SalesOrderController::class, 'markReadyToShip']);
     Route::post('/sales-orders/delivery-update', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateDelivery']);
     Route::post('/sales-orders/payment-proofs/printed', [\App\Http\Controllers\Api\SalesOrderController::class, 'markPaymentProofsPrinted']);
+    // Ganti item order (admin only; role guard di controller).
+    Route::post('/sales-orders/{id}/items', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateItems']);
 
     // Sales Order Online - Create (admin)
     Route::get('/sales-orders/online-shop-providers', [\App\Http\Controllers\Api\SalesOrderController::class, 'onlineShopProviders']);
     Route::get('/sales-orders/delivery-services', [\App\Http\Controllers\Api\SalesOrderController::class, 'deliveryServices']);
     Route::get('/sales-orders/online-products', [\App\Http\Controllers\Api\SalesOrderController::class, 'onlineProducts']);
     Route::post('/sales-orders/online', [\App\Http\Controllers\Api\SalesOrderController::class, 'storeOnline']);
+    // Detail satu order online (deep-link notifikasi) — wajib setelah route
+    // POST di atas supaya tidak bentrok.
+    Route::get('/sales-orders/online/{id}', [\App\Http\Controllers\Api\SalesOrderController::class, 'showOnline']);
 
     // Sales Order Employee (for=2) — penjualan oleh sales.
     // Role guard di controller: sales = CRUD milik sendiri, admin = list semua +

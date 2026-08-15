@@ -9,64 +9,30 @@ use App\Models\OnlineShopProvider;
 use App\Models\DeliveryService;
 use App\Models\Product;
 use App\Contracts\ImageStorageContract;
+use App\Services\SalesOrderNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 class SalesOrderController extends Controller
 {
+    public function __construct(protected SalesOrderNotificationService $salesOrderNotification)
+    {
+    }
+
     public function search(Request $request)
     {
         $receiptNo = $request->query('receipt_no');
         $for = $request->query('for', '3');
-        $paymentProofPrintColumns = $this->paymentProofPrintColumns();
 
         if ($receiptNo) {
-            $order = DB::table('sales_orders')
-                ->leftJoin('stores', 'sales_orders.store_id', '=', 'stores.id')
-                ->leftJoin('online_shop_providers', 'sales_orders.online_shop_provider_id', '=', 'online_shop_providers.id')
-                ->leftJoin('delivery_services', 'sales_orders.delivery_service_id', '=', 'delivery_services.id')
-                ->leftJoin('transfer_to_accounts', 'sales_orders.transfer_to_account_id', '=', 'transfer_to_accounts.id')
-                ->leftJoin('banks', 'transfer_to_accounts.bank_id', '=', 'banks.id')
-                ->leftJoin('delivery_addresses', 'sales_orders.delivery_address_id', '=', 'delivery_addresses.id')
-                ->leftJoin('subdistricts', 'delivery_addresses.subdistrict_id', '=', 'subdistricts.id')
-                ->leftJoin('districts', 'delivery_addresses.district_id', '=', 'districts.id')
-                ->leftJoin('cities', 'delivery_addresses.city_id', '=', 'cities.id')
-                ->leftJoin('provinces', 'delivery_addresses.province_id', '=', 'provinces.id')
-                ->leftJoin('users', 'sales_orders.ordered_by_id', '=', 'users.id')
+            $order = $this->orderRowQuery()
                 ->where('sales_orders.receipt_no', $receiptNo)
                 ->where('sales_orders.for', $for)
                 ->whereNull('sales_orders.deleted_at')
-                ->select([
-                    'sales_orders.id',
-                    'sales_orders.receipt_no',
-                    'sales_orders.delivery_status',
-                    'sales_orders.received_by',
-                    'sales_orders.image_delivery',
-                    'sales_orders.image_payment',
-                    'sales_orders.total_price',
-                    ...$paymentProofPrintColumns,
-                    'stores.nickname as store_name',
-                    'online_shop_providers.name as provider_name',
-                    'delivery_services.name as delivery_service_name',
-                    'sales_orders.delivery_date',
-                    'sales_orders.payment_method',
-                    'sales_orders.payment_status',
-                    'banks.name as bank_name',
-                    'transfer_to_accounts.number as bank_account_number',
-                    'transfer_to_accounts.name as bank_account_name',
-                    'delivery_addresses.name as address_name',
-                    'delivery_addresses.recipient_name as address_recipient_name',
-                    'delivery_addresses.recipient_telp_no as address_recipient_telp_no',
-                    'delivery_addresses.address as address_detail',
-                    'subdistricts.name as address_subdistrict',
-                    'districts.name as address_district',
-                    'cities.name as address_city',
-                    'provinces.name as address_province',
-                    'users.name as ordered_by_name'
-                ])
                 ->first();
 
             if (!$order) {
@@ -76,24 +42,7 @@ class SalesOrderController extends Controller
                 ], 404);
             }
 
-            // Get details (products)
-            $items = DB::table('detail_sales_orders')
-                ->join('products', 'detail_sales_orders.product_id', '=', 'products.id')
-                ->leftJoin('units', 'products.unit_id', '=', 'units.id')
-                ->where('detail_sales_orders.sales_order_id', $order->id)
-                ->select([
-                    'products.name as product_name',
-                    'detail_sales_orders.quantity',
-                    'detail_sales_orders.unit_price',
-                    'detail_sales_orders.subtotal_price',
-                    'units.unit as product_unit'
-                ])
-                ->get();
-
-            $order->items = $items;
-            $this->resolveImageDeliveryFields($order);
-            $order->image_payment_url = $this->getStorageUrl($order->image_payment);
-            $this->appendPaymentProofPrintStatus($order);
+            $this->enrichOrder($order);
 
             return response()->json([
                 'success' => true,
@@ -104,18 +53,7 @@ class SalesOrderController extends Controller
         // List pagination when receipt_no is not provided
         $perPage = $request->query('per_page', 10);
 
-        $orders = DB::table('sales_orders')
-            ->leftJoin('stores', 'sales_orders.store_id', '=', 'stores.id')
-            ->leftJoin('online_shop_providers', 'sales_orders.online_shop_provider_id', '=', 'online_shop_providers.id')
-            ->leftJoin('delivery_services', 'sales_orders.delivery_service_id', '=', 'delivery_services.id')
-            ->leftJoin('transfer_to_accounts', 'sales_orders.transfer_to_account_id', '=', 'transfer_to_accounts.id')
-            ->leftJoin('banks', 'transfer_to_accounts.bank_id', '=', 'banks.id')
-            ->leftJoin('delivery_addresses', 'sales_orders.delivery_address_id', '=', 'delivery_addresses.id')
-            ->leftJoin('subdistricts', 'delivery_addresses.subdistrict_id', '=', 'subdistricts.id')
-            ->leftJoin('districts', 'delivery_addresses.district_id', '=', 'districts.id')
-            ->leftJoin('cities', 'delivery_addresses.city_id', '=', 'cities.id')
-            ->leftJoin('provinces', 'delivery_addresses.province_id', '=', 'provinces.id')
-            ->leftJoin('users', 'sales_orders.ordered_by_id', '=', 'users.id')
+        $orders = $this->orderRowQuery()
             ->where('sales_orders.for', $for)
             ->whereNull('sales_orders.deleted_at')
             ->when($request->filled('delivery_status'), function ($query) use ($request) {
@@ -137,57 +75,13 @@ class SalesOrderController extends Controller
                     $query->whereNotNull('sales_orders.payment_proof_printed_at');
                 }
             )
-            ->select([
-                'sales_orders.id',
-                'sales_orders.receipt_no',
-                'sales_orders.delivery_status',
-                'sales_orders.received_by',
-                'sales_orders.image_delivery',
-                'sales_orders.image_payment',
-                'sales_orders.total_price',
-                ...$paymentProofPrintColumns,
-                'stores.nickname as store_name',
-                'online_shop_providers.name as provider_name',
-                'delivery_services.name as delivery_service_name',
-                'sales_orders.delivery_date',
-                'sales_orders.payment_method',
-                'sales_orders.payment_status',
-                'banks.name as bank_name',
-                'transfer_to_accounts.number as bank_account_number',
-                'transfer_to_accounts.name as bank_account_name',
-                'delivery_addresses.name as address_name',
-                'delivery_addresses.recipient_name as address_recipient_name',
-                'delivery_addresses.recipient_telp_no as address_recipient_telp_no',
-                'delivery_addresses.address as address_detail',
-                'subdistricts.name as address_subdistrict',
-                'districts.name as address_district',
-                'cities.name as address_city',
-                'provinces.name as address_province',
-                'users.name as ordered_by_name'
-            ])
             ->orderBy('sales_orders.delivery_date', 'desc')
             ->orderBy('sales_orders.id', 'desc')
             ->paginate($perPage);
 
         // Map items for each order in the paginated response
         $itemsData = $orders->getCollection()->map(function ($order) {
-            $items = DB::table('detail_sales_orders')
-                ->join('products', 'detail_sales_orders.product_id', '=', 'products.id')
-                ->leftJoin('units', 'products.unit_id', '=', 'units.id')
-                ->where('detail_sales_orders.sales_order_id', $order->id)
-                ->select([
-                    'products.name as product_name',
-                    'detail_sales_orders.quantity',
-                    'detail_sales_orders.unit_price',
-                    'detail_sales_orders.subtotal_price',
-                    'units.unit as product_unit'
-                ])
-                ->get();
-
-            $order->items = $items;
-            $this->resolveImageDeliveryFields($order);
-            $order->image_payment_url = $this->getStorageUrl($order->image_payment);
-            $this->appendPaymentProofPrintStatus($order);
+            $this->enrichOrder($order);
             return $order;
         });
 
@@ -252,6 +146,101 @@ class SalesOrderController extends Controller
                 'updated_count' => $updated,
                 'printed_at' => now()->toIso8601String(),
             ],
+        ]);
+    }
+
+    /**
+     * Ganti seluruh item (detail_sales_orders) sebuah order. Khusus admin —
+     * menggantikan alur lama "hubungi admin backend" dari mobile. Hanya
+     * boleh saat order belum terkunci (delivery_status 2/3/6 = locked).
+     */
+    public function updateItems(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user->hasRole('admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya admin yang dapat mengubah rincian produk.'
+            ], 403);
+        }
+
+        $order = DB::table('sales_orders')
+            ->where('id', $id)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order tidak ditemukan.'
+            ], 404);
+        }
+
+        // Loose comparison: delivery_status bisa string maupun int.
+        if (in_array((int) $order->delivery_status, [2, 3, 6])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order sudah terkunci (valid/terkirim/dikembalikan) sehingga rincian produk tidak dapat diubah.'
+            ], 400);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_price' => 'required|numeric|min:0',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        DB::transaction(function () use ($request, $id) {
+            DB::table('detail_sales_orders')->where('sales_order_id', $id)->delete();
+
+            $totalPrice = 0;
+            $now = now();
+            foreach ($request->items as $item) {
+                $quantity = (int) $item['quantity'];
+                $unitPrice = (int) $item['unit_price'];
+                $subtotal = $quantity * $unitPrice;
+                $totalPrice += $subtotal;
+
+                DB::table('detail_sales_orders')->insert([
+                    'sales_order_id' => $id,
+                    'product_id' => $item['product_id'],
+                    'quantity' => $quantity,
+                    'unit_price' => $unitPrice,
+                    'subtotal_price' => $subtotal,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
+
+            DB::table('sales_orders')
+                ->where('id', $id)
+                ->update([
+                    'total_price' => $totalPrice,
+                    'updated_at' => $now,
+                ]);
+        });
+
+        // Kembalikan order yang sudah diperkaya agar mobile langsung
+        // memperbarui tampilan (items, total, dsb.).
+        $updatedOrder = $this->orderRowQuery()
+            ->where('sales_orders.id', $id)
+            ->whereNull('sales_orders.deleted_at')
+            ->first();
+        $this->enrichOrder($updatedOrder);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Rincian produk berhasil diperbarui.',
+            'data' => $updatedOrder,
         ]);
     }
 
@@ -599,6 +588,20 @@ class SalesOrderController extends Controller
 
             DB::commit();
 
+            // Notifikasi ke storage-staff (di luar transaction): kegagalan
+            // notifikasi tidak boleh menggagalkan request pembuatan order.
+            try {
+                $this->salesOrderNotification->notifyOnlineSalesOrderCreated(
+                    $order,
+                    $request->user()->id
+                );
+            } catch (\Throwable $e) {
+                Log::warning('SalesOrderNotification: gagal kirim notifikasi order online.', [
+                    'sales_order_id' => $order->id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Sales order online berhasil dibuat.',
@@ -612,6 +615,109 @@ class SalesOrderController extends Controller
                 'message' => 'Gagal membuat sales order online: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Detail satu order online (for = 3) beserta items, untuk deep-link
+     * notifikasi mobile. Tanpa restriksi role tambahan (konsisten dengan
+     * `search` yang hanya `auth:sanctum`).
+     */
+    public function showOnline(int $id)
+    {
+        $order = $this->orderRowQuery()
+            ->where('sales_orders.id', $id)
+            ->where('sales_orders.for', '3')
+            ->whereNull('sales_orders.deleted_at')
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order tidak ditemukan.'
+            ], 404);
+        }
+
+        $this->enrichOrder($order);
+
+        return response()->json([
+            'success' => true,
+            'data' => $order
+        ]);
+    }
+
+    /**
+     * Query dasar row order (join store/provider/delivery service/address/
+     * bank/ordered_by) — dipakai `search` (single & pagination) dan `showOnline`.
+     */
+    private function orderRowQuery()
+    {
+        return DB::table('sales_orders')
+            ->leftJoin('stores', 'sales_orders.store_id', '=', 'stores.id')
+            ->leftJoin('online_shop_providers', 'sales_orders.online_shop_provider_id', '=', 'online_shop_providers.id')
+            ->leftJoin('delivery_services', 'sales_orders.delivery_service_id', '=', 'delivery_services.id')
+            ->leftJoin('transfer_to_accounts', 'sales_orders.transfer_to_account_id', '=', 'transfer_to_accounts.id')
+            ->leftJoin('banks', 'transfer_to_accounts.bank_id', '=', 'banks.id')
+            ->leftJoin('delivery_addresses', 'sales_orders.delivery_address_id', '=', 'delivery_addresses.id')
+            ->leftJoin('subdistricts', 'delivery_addresses.subdistrict_id', '=', 'subdistricts.id')
+            ->leftJoin('districts', 'delivery_addresses.district_id', '=', 'districts.id')
+            ->leftJoin('cities', 'delivery_addresses.city_id', '=', 'cities.id')
+            ->leftJoin('provinces', 'delivery_addresses.province_id', '=', 'provinces.id')
+            ->leftJoin('users', 'sales_orders.ordered_by_id', '=', 'users.id')
+            ->select([
+                'sales_orders.id',
+                'sales_orders.receipt_no',
+                'sales_orders.delivery_status',
+                'sales_orders.received_by',
+                'sales_orders.image_delivery',
+                'sales_orders.image_payment',
+                'sales_orders.total_price',
+                ...$this->paymentProofPrintColumns(),
+                'stores.nickname as store_name',
+                'online_shop_providers.name as provider_name',
+                'delivery_services.name as delivery_service_name',
+                'sales_orders.delivery_date',
+                'sales_orders.payment_method',
+                'sales_orders.payment_status',
+                'banks.name as bank_name',
+                'transfer_to_accounts.number as bank_account_number',
+                'transfer_to_accounts.name as bank_account_name',
+                'delivery_addresses.name as address_name',
+                'delivery_addresses.recipient_name as address_recipient_name',
+                'delivery_addresses.recipient_telp_no as address_recipient_telp_no',
+                'delivery_addresses.address as address_detail',
+                'subdistricts.name as address_subdistrict',
+                'districts.name as address_district',
+                'cities.name as address_city',
+                'provinces.name as address_province',
+                'users.name as ordered_by_name'
+            ]);
+    }
+
+    /**
+     * Lengkapi row order hasil `orderRowQuery()`: attach items + resolve URL
+     * image delivery/payment + status print bukti pembayaran.
+     */
+    private function enrichOrder(object $order): void
+    {
+        $items = DB::table('detail_sales_orders')
+            ->join('products', 'detail_sales_orders.product_id', '=', 'products.id')
+            ->leftJoin('units', 'products.unit_id', '=', 'units.id')
+            ->where('detail_sales_orders.sales_order_id', $order->id)
+            ->select([
+                'detail_sales_orders.id as detail_id',
+                'detail_sales_orders.product_id',
+                'products.name as product_name',
+                'detail_sales_orders.quantity',
+                'detail_sales_orders.unit_price',
+                'detail_sales_orders.subtotal_price',
+                'units.unit as product_unit'
+            ])
+            ->get();
+
+        $order->items = $items;
+        $this->resolveImageDeliveryFields($order);
+        $order->image_payment_url = $this->getStorageUrl($order->image_payment);
+        $this->appendPaymentProofPrintStatus($order);
     }
 
     private function getStorageUrl($path)

@@ -3,10 +3,7 @@
 namespace App\Services;
 
 use App\Models\InvoicePurchase;
-use App\Models\Notification;
 use App\Models\PaymentReceipt;
-use App\Models\User;
-use Illuminate\Support\Facades\Log;
 
 /**
  * Mengirim notifikasi FCM push terkait procurement ke aplikasi mobile Flutter.
@@ -18,12 +15,12 @@ use Illuminate\Support\Facades\Log;
  *      dibayar (invoice transfer / daily salary / fuel & service), kecuali
  *      pembayar sendiri.
  *
- * Semua pengiriman dibungkus try/catch + Log::warning sehingga kegagalan FCM
- * tidak boleh menggagalkan request utama (pembayaran/invoice).
+ * Logika generik (resolve resipien, persist row `notifications`, kirim FCM)
+ * didelegasikan ke [NotificationDispatcher].
  */
 class ProcurementNotificationService
 {
-    public function __construct(protected FcmService $fcm)
+    public function __construct(protected NotificationDispatcher $dispatcher)
     {
     }
 
@@ -34,50 +31,28 @@ class ProcurementNotificationService
      */
     public function notifyInvoiceTransferCreated(InvoicePurchase $invoice, int $creatorId): int
     {
-        // Kandidat: semua admin/super_admin (kecuali pembuat).
-        $candidateIds = User::role(['admin', 'super_admin'])
-            ->pluck('id')
-            ->all();
-
-        $recipientIds = array_values(array_filter(
-            $candidateIds,
-            fn ($id) => (int) $id !== $creatorId,
-        ));
+        $recipientIds = $this->dispatcher->userIdsByRoles(['admin', 'super_admin'], $creatorId);
 
         if (empty($recipientIds)) {
             return 0;
         }
 
         $supplierName = $invoice->supplier?->name;
-        $amount = $this->formatRupiah($invoice->total_price ?? 0);
+        $amount = $this->dispatcher->formatRupiah($invoice->total_price ?? 0);
 
         $body = "Invoice transfer #{$invoice->id} sejumlah {$amount}";
         $body .= $supplierName ? " dari {$supplierName} menunggu pembayaran." : ' menunggu pembayaran.';
 
-        $payload = [
-            'type' => 'invoice_transfer_created',
-            'invoice_id' => (string) $invoice->id,
-            'total_price' => (string) ($invoice->total_price ?? 0),
-            'title' => 'Invoice Transfer Baru',
-            'body' => $body,
-        ];
-
-        // Tulis row notifikasi (persist) untuk tiap resipien — gagal tulis
-        // tidak mengganggu FCM maupun request utama.
-        $this->persistForRecipients($recipientIds, [
-            'type' => 'invoice_transfer_created',
-            'title' => 'Invoice Transfer Baru',
-            'body' => $body,
-            'data' => ['invoice_id' => (string) $invoice->id],
-        ]);
-
-        // Kirim FCM hanya ke resipien yang punya device terdaftar.
-        $fcmRecipients = array_values(array_filter(
+        return $this->dispatcher->sendToUsers(
             $recipientIds,
-            fn ($id) => $this->fcm->hasDevice((int) $id),
-        ));
-
-        return $this->sendToRecipients($fcmRecipients, $payload);
+            'invoice_transfer_created',
+            'Invoice Transfer Baru',
+            $body,
+            [
+                'invoice_id' => (string) $invoice->id,
+                'total_price' => (string) ($invoice->total_price ?? 0),
+            ],
+        );
     }
 
     /**
@@ -108,36 +83,21 @@ class ProcurementNotificationService
             default => 'Procurement',
         };
 
-        $amount = $this->formatRupiah($receipt->transfer_amount ?? $receipt->total_amount ?? 0);
+        $amount = $this->dispatcher->formatRupiah($receipt->transfer_amount ?? $receipt->total_amount ?? 0);
 
-        $payload = [
-            'type' => 'payment_receipt_paid',
-            'payment_for' => (string) $receipt->payment_for,
-            'receipt_id' => (string) $receipt->id,
-            'transfer_amount' => (string) ($receipt->transfer_amount ?? 0),
-            'title' => 'Pembayaran Telah Dilakukan',
-            'body' => "Pembayaran {$label} via transfer sejumlah {$amount} telah dibayar.",
-        ];
+        $body = "Pembayaran {$label} via transfer sejumlah {$amount} telah dibayar.";
 
-        // Tulis row notifikasi (persist) untuk tiap resipien — gagal tulis
-        // tidak mengganggu FCM maupun request utama.
-        $this->persistForRecipients($recipientIds, [
-            'type' => 'payment_receipt_paid',
-            'title' => 'Pembayaran Telah Dilakukan',
-            'body' => "Pembayaran {$label} via transfer sejumlah {$amount} telah dibayar.",
-            'data' => [
+        return $this->dispatcher->sendToUsers(
+            $recipientIds,
+            'payment_receipt_paid',
+            'Pembayaran Telah Dilakukan',
+            $body,
+            [
                 'receipt_id' => (string) $receipt->id,
                 'payment_for' => (string) $receipt->payment_for,
+                'transfer_amount' => (string) ($receipt->transfer_amount ?? 0),
             ],
-        ]);
-
-        // Kirim FCM hanya ke resipien yang punya device terdaftar.
-        $fcmRecipients = array_values(array_filter(
-            $recipientIds,
-            fn ($id) => $this->fcm->hasDevice((int) $id),
-        ));
-
-        return $this->sendToRecipients($fcmRecipients, $payload);
+        );
     }
 
     /**
@@ -160,65 +120,5 @@ class ProcurementNotificationService
         }
 
         return [];
-    }
-
-    /**
-     * Kirim payload ke daftar user, tahan kegagalan per-user.
-     *
-     * @return int Jumlah user yang berhasil dikirimi.
-     */
-    protected function sendToRecipients(array $recipientIds, array $payload): int
-    {
-        $sent = 0;
-        foreach ($recipientIds as $userId) {
-            try {
-                $sent += $this->fcm->sendToUser((int) $userId, $payload);
-            } catch (\Throwable $e) {
-                Log::warning('ProcurementNotification: gagal kirim FCM.', [
-                    'type' => $payload['type'] ?? null,
-                    'user_id' => $userId,
-                    'message' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        return $sent;
-    }
-
-    /**
-     * Tulis satu row notifikasi ke tabel `notifications` per resipien.
-     * Dibungkus try/catch terpisah — kegagalan insert tidak boleh
-     * mengganggu pengiriman FCM maupun request utama.
-     *
-     * @param array<int> $recipientIds
-     * @param array{type:string,title:string,body:string,data:array} $entry
-     */
-    protected function persistForRecipients(array $recipientIds, array $entry): void
-    {
-        foreach ($recipientIds as $userId) {
-            try {
-                Notification::create([
-                    'user_id' => (int) $userId,
-                    'type' => $entry['type'],
-                    'title' => $entry['title'],
-                    'body' => $entry['body'],
-                    'data' => $entry['data'] ?? null,
-                ]);
-            } catch (\Throwable $e) {
-                Log::warning('ProcurementNotification: gagal tulis row notifikasi.', [
-                    'type' => $entry['type'] ?? null,
-                    'user_id' => $userId,
-                    'message' => $e->getMessage(),
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Format angka menjadi "Rp 1.500.000".
-     */
-    protected function formatRupiah(int|float $amount): string
-    {
-        return 'Rp ' . number_format((int) $amount, 0, ',', '.');
     }
 }

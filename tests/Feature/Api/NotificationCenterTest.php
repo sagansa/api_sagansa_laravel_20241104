@@ -168,15 +168,15 @@ class NotificationCenterTest extends TestCase
         $this->assertNotContains($otherStaff->id, $this->sentTo);
 
         // Row notifikasi tercipta untuk admin & super_admin, bukan creator.
-        $this->assertDatabaseHas('notifications', [
+        $this->assertDatabaseHas('notification_center', [
             'user_id' => $admin->id,
             'type' => 'invoice_transfer_created',
         ]);
-        $this->assertDatabaseHas('notifications', [
+        $this->assertDatabaseHas('notification_center', [
             'user_id' => $superAdmin->id,
             'type' => 'invoice_transfer_created',
         ]);
-        $this->assertDatabaseMissing('notifications', [
+        $this->assertDatabaseMissing('notification_center', [
             'user_id' => $creator->id,
             'type' => 'invoice_transfer_created',
         ]);
@@ -205,7 +205,7 @@ class NotificationCenterTest extends TestCase
         $res->assertCreated();
 
         $this->assertEmpty($this->sentTo, 'Invoice Cash tidak boleh memicu push.');
-        $this->assertDatabaseMissing('notifications', [
+        $this->assertDatabaseMissing('notification_center', [
             'user_id' => $admin->id,
             'type' => 'invoice_transfer_created',
         ]);
@@ -249,15 +249,15 @@ class NotificationCenterTest extends TestCase
         $this->assertContains($ownerB->id, $this->sentTo);
         $this->assertNotContains($payer->id, $this->sentTo);
 
-        $this->assertDatabaseHas('notifications', [
+        $this->assertDatabaseHas('notification_center', [
             'user_id' => $ownerA->id,
             'type' => 'payment_receipt_paid',
         ]);
-        $this->assertDatabaseHas('notifications', [
+        $this->assertDatabaseHas('notification_center', [
             'user_id' => $ownerB->id,
             'type' => 'payment_receipt_paid',
         ]);
-        $this->assertDatabaseMissing('notifications', [
+        $this->assertDatabaseMissing('notification_center', [
             'user_id' => $payer->id,
             'type' => 'payment_receipt_paid',
         ]);
@@ -297,7 +297,7 @@ class NotificationCenterTest extends TestCase
 
         $this->assertContains($owner->id, $this->sentTo);
         $this->assertNotContains($payer->id, $this->sentTo);
-        $this->assertDatabaseHas('notifications', [
+        $this->assertDatabaseHas('notification_center', [
             'user_id' => $owner->id,
             'type' => 'payment_receipt_paid',
         ]);
@@ -341,7 +341,7 @@ class NotificationCenterTest extends TestCase
 
         $this->assertContains($owner->id, $this->sentTo);
         $this->assertNotContains($payer->id, $this->sentTo);
-        $this->assertDatabaseHas('notifications', [
+        $this->assertDatabaseHas('notification_center', [
             'user_id' => $owner->id,
             'type' => 'payment_receipt_paid',
         ]);
