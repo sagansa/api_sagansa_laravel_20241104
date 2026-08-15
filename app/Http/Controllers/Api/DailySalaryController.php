@@ -7,6 +7,7 @@ use App\Models\DailySalary;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class DailySalaryController extends Controller
 {
@@ -135,6 +136,133 @@ class DailySalaryController extends Controller
         return response()->json([
             'success' => true,
             'data' => $dailySalary,
+        ]);
+    }
+
+    /**
+     * Buat daily salary manual dari mobile (meniru CreateDailySalary admin):
+     * created_by_id selalu user login dan status selalu 1 (belum dibayar).
+     * Tidak boleh ada duplikat user + tanggal yang sama.
+     */
+    public function store(Request $request)
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'store_id' => ['required', 'integer', 'exists:stores,id'],
+            'shift_store_id' => ['required', 'integer', 'exists:shift_stores,id'],
+            'date' => [
+                'required',
+                'date',
+                Rule::unique('daily_salaries', 'date')->where('created_by_id', $user->id),
+            ],
+            'amount' => ['required', 'numeric', 'min:0'],
+            'payment_type_id' => [
+                'required',
+                'integer',
+                Rule::exists('payment_types', 'id')->where('status', 1),
+            ],
+        ]);
+
+        $dailySalary = DailySalary::create([
+            ...$validated,
+            'status' => 1,
+            'created_by_id' => $user->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Daily salary berhasil dibuat.',
+            'data' => $dailySalary->load(['createdBy', 'store', 'shiftStore', 'paymentType']),
+        ], 201);
+    }
+
+    /**
+     * Update daily salary milik sendiri (atau admin untuk semua), hanya
+     * selama belum dibayar. Status dan created_by_id tidak dapat diubah —
+     * perubahan status tetap lewat bulk-update-status (admin).
+     */
+    public function update(Request $request, $id)
+    {
+        $user = $request->user();
+        $dailySalary = DailySalary::findOrFail($id);
+
+        if ((int) $dailySalary->created_by_id !== $user->id && !$user->hasRole('admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda hanya dapat mengubah daily salary milik sendiri.',
+            ], 403);
+        }
+
+        if ($dailySalary->status == 2) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Daily salary yang sudah dibayar tidak dapat diubah.',
+            ], 400);
+        }
+
+        $validated = $request->validate([
+            'store_id' => ['sometimes', 'integer', 'exists:stores,id'],
+            'shift_store_id' => ['sometimes', 'integer', 'exists:shift_stores,id'],
+            'date' => [
+                'sometimes',
+                'date',
+                Rule::unique('daily_salaries', 'date')
+                    ->ignore($dailySalary->id)
+                    ->where('created_by_id', $dailySalary->created_by_id),
+            ],
+            'amount' => ['sometimes', 'numeric', 'min:0'],
+            'payment_type_id' => [
+                'sometimes',
+                'integer',
+                Rule::exists('payment_types', 'id')->where('status', 1),
+            ],
+        ]);
+
+        $dailySalary->update($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Daily salary berhasil diperbarui.',
+            'data' => $dailySalary->fresh(['createdBy', 'store', 'shiftStore', 'paymentType']),
+        ]);
+    }
+
+    /**
+     * Hapus daily salary milik sendiri (atau admin untuk semua). Yang sudah
+     * dibayar atau sudah terikat payment receipt tidak boleh dihapus.
+     */
+    public function destroy(Request $request, $id)
+    {
+        $user = $request->user();
+        $dailySalary = DailySalary::findOrFail($id);
+
+        if ((int) $dailySalary->created_by_id !== $user->id && !$user->hasRole('admin')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda hanya dapat menghapus daily salary milik sendiri.',
+            ], 403);
+        }
+
+        if ($dailySalary->status == 2) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Daily salary yang sudah dibayar tidak dapat dihapus.',
+            ], 400);
+        }
+
+        if ($dailySalary->paymentReceipts()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Daily salary sudah terikat payment receipt dan tidak dapat dihapus.',
+            ], 400);
+        }
+
+        $dailySalary->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Daily salary berhasil dihapus.',
         ]);
     }
 
