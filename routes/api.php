@@ -71,6 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Admin: kelola profil pelamar (list, detail, kunci/buka).
     Route::prefix('admin/profile')->group(function () {
         Route::get('/', [RecruitmentController::class, 'index']);
+        Route::get('/user/{userId}', [RecruitmentController::class, 'showByUser']);
         Route::get('/{id}', [RecruitmentController::class, 'show']);
         Route::post('/{id}/status', [RecruitmentController::class, 'setStatus']);
     });

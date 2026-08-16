@@ -187,6 +187,34 @@ class RecruitmentController extends Controller
     }
 
     /**
+     * ADMIN: Detail profil berdasarkan user id — dipakai mis. untuk menampilkan
+     * rekening pegawai penerima payment receipt gaji harian (receipt gaji
+     * tidak memakai QRIS supplier).
+     */
+    public function showByUser(Request $request, $userId)
+    {
+        $details = ApplicantDetail::with('user')
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$details) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Profil untuk user tersebut tidak ditemukan.'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'details' => $details,
+            'user' => $details->user
+                ? ['id' => $details->user->id, 'name' => $details->user->name, 'email' => $details->user->email]
+                : null,
+            'locked' => $this->isLocked($details),
+        ]);
+    }
+
+    /**
      * ADMIN: Ubah status profil (kunci / buka kunci).
      *
      * - status = 'draft'  -> buka kunci (user boleh ubah semua field).
