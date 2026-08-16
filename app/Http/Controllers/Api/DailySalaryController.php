@@ -31,6 +31,16 @@ class DailySalaryController extends Controller
             $query->where('created_by_id', $request->user_id);
         }
 
+        // Filter by kelompok role karyawan (admin only): 'active' = staff,
+        // 'former' = former-employee. Tabel users ada di koneksi DB berbeda
+        // dari daily_salaries, jadi ID di-resolve dulu lalu whereIn.
+        if ($request->filled('employee_role') && $user->hasRole('admin')) {
+            $roleName = $request->employee_role === 'former' ? 'former-employee' : 'staff';
+            $roleUserIds = User::whereHas('roles', fn ($q) => $q->where('name', $roleName))
+                ->pluck('id');
+            $query->whereIn('created_by_id', $roleUserIds);
+        }
+
         // Filter by status
         if ($request->has('status')) {
             $query->where('status', $request->status);
@@ -91,8 +101,19 @@ class DailySalaryController extends Controller
             ->whereHas('roles', function ($query) {
                 $query->whereIn('name', ['staff', 'former-employee']);
             })
+            ->with('roles')
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name'])
+            ->map(function (User $employee) {
+                return [
+                    'id' => $employee->id,
+                    'name' => $employee->name,
+                    // Dipakai client untuk pilihan "aktif vs mantan karyawan".
+                    'is_former_employee' => $employee
+                        ->roles
+                        ->contains(fn ($role) => $role->name === 'former-employee'),
+                ];
+            });
 
         return response()->json([
             'success' => true,

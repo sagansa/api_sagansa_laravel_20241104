@@ -208,4 +208,73 @@ class PaymentReceiptDailySalaryTest extends TestCase
         );
         $res2->assertOk()->assertJsonPath('meta.total_amount', 450000);
     }
+
+    // ------------------------------------------------------------------
+    // 5. GET /daily-salaries/employees → flag is_former_employee per user
+    // ------------------------------------------------------------------
+
+    public function test_employees_endpoint_returns_former_employee_flag(): void
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'former-employee']);
+
+        $admin = $this->userWithRole('admin');
+        $active = $this->userWithRole('staff');
+        $former = User::factory()->create();
+        $former->assignRole('former-employee');
+
+        $store = $this->store();
+        $this->salary($store, $active->id, 100000);
+        $this->salary($store, $former->id, 100000);
+
+        Sanctum::actingAs($admin);
+        $res = $this->getJson('/daily-salaries/employees');
+
+        $res->assertOk()->assertJsonPath('success', true);
+
+        $byId = collect($res->json('data'))->keyBy('id');
+        $this->assertFalse($byId[$active->id]['is_former_employee']);
+        $this->assertTrue($byId[$former->id]['is_former_employee']);
+    }
+
+    // ------------------------------------------------------------------
+    // 6. GET /daily-salaries?employee_role= → filter aktif vs mantan
+    // ------------------------------------------------------------------
+
+    public function test_daily_salaries_index_filters_by_employee_role(): void
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'former-employee']);
+
+        $admin = $this->userWithRole('admin');
+        $active = $this->userWithRole('staff');
+        $former = User::factory()->create();
+        $former->assignRole('former-employee');
+
+        $store = $this->store();
+        $this->salary($store, $active->id, 200000);
+        $this->salary($store, $former->id, 150000);
+
+        Sanctum::actingAs($admin);
+
+        // Test DB tidak di-refresh antar run (data lama tetap ada), jadi
+        // asersi dikombinasikan dengan user_id user yang baru dibuat agar
+        // deterministik sekaligus tetap membuktikan employee_role diterapkan.
+
+        // Karyawan aktif + filter active → record-nya ikut.
+        $this->getJson('/daily-salaries?user_id=' . $active->id . '&employee_role=active')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('meta.total_amount', 200000);
+
+        // Karyawan aktif + filter former → record-nya tersaring habis.
+        $this->getJson('/daily-salaries?user_id=' . $active->id . '&employee_role=former')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 0)
+            ->assertJsonPath('meta.total_amount', 0);
+
+        // Mantan karyawan + filter former → record-nya ikut.
+        $this->getJson('/daily-salaries?user_id=' . $former->id . '&employee_role=former')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('meta.total_amount', 150000);
+    }
 }
