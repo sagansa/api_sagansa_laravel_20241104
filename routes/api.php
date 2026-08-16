@@ -196,8 +196,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/payment-receipts/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showPaymentReceipt']);
         Route::get('/payment-receipts/{id}/qris', [\App\Http\Controllers\Api\ProcurementController::class, 'paymentReceiptQris']);
         Route::post('/payment-receipts', [\App\Http\Controllers\Api\ProcurementController::class, 'storePaymentReceipt']);
+        Route::delete('/payment-receipts/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'destroyPaymentReceipt']);
         Route::post('/fuel-service-payment-receipts', [\App\Http\Controllers\Api\ProcurementController::class, 'storeFuelServicePaymentReceipt']);
         Route::post('/fuel-service-payment-receipts/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'updateFuelServicePaymentReceipt']);
+        Route::post('/daily-salary-payment-receipts/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'updateDailySalaryPaymentReceipt']);
     });
 
     Route::prefix('storage-stocks')->group(function () {

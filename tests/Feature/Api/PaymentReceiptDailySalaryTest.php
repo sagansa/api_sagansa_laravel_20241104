@@ -277,4 +277,126 @@ class PaymentReceiptDailySalaryTest extends TestCase
             ->assertJsonPath('meta.total', 1)
             ->assertJsonPath('meta.total_amount', 150000);
     }
+
+    // ------------------------------------------------------------------
+    // 7. Edit receipt: item add/remove tersinkron status dua arah
+    // ------------------------------------------------------------------
+
+    public function test_daily_salary_receipt_edit_syncs_items_and_status(): void
+    {
+        $admin = $this->userWithRole('admin');
+        $employee = $this->userWithRole('staff');
+        $store = $this->store();
+
+        $salaryA = $this->salary($store, $employee->id, 200000, '1');
+        $salaryB = $this->salary($store, $employee->id, 150000, '3');
+        $salaryC = $this->salary($store, $employee->id, 100000, '3');
+
+        Sanctum::actingAs($admin);
+        $create = $this->postJson('/procurement/payment-receipts', [
+            'payment_for' => 2,
+            'daily_salary_ids' => [$salaryA->id, $salaryB->id],
+            'transfer_amount' => 350000,
+        ]);
+        $create->assertCreated();
+        $receiptId = $create->json('data.id');
+
+        // Edit: buang B, tambah C; nominal transfer berubah.
+        $res = $this->postJson("/procurement/daily-salary-payment-receipts/{$receiptId}", [
+            'daily_salary_ids' => [$salaryA->id, $salaryC->id],
+            'transfer_amount' => 300000,
+            'notes' => 'revise',
+        ]);
+
+        $res->assertOk()->assertJsonPath('success', true);
+        $res->assertJsonPath('data.transfer_amount', 300000);
+        $res->assertJsonPath('data.total_amount', 300000); // 200k + 100k
+        $res->assertJsonPath('data.user_id', $employee->id);
+        $res->assertJsonPath('data.notes', 'revise');
+
+        // B dilepas → kembali siap dibayar (3); A tetap dibayar; C jadi dibayar.
+        $this->assertEquals('2', $salaryA->fresh()->status);
+        $this->assertEquals('3', $salaryB->fresh()->status);
+        $this->assertEquals('2', $salaryC->fresh()->status);
+
+        // Pivot B hilang, A & C ter-attach.
+        $this->assertDatabaseMissing('daily_salary_payment_receipt', [
+            'daily_salary_id' => $salaryB->id,
+        ]);
+        $this->assertDatabaseHas('daily_salary_payment_receipt', [
+            'daily_salary_id' => $salaryA->id,
+        ]);
+        $this->assertDatabaseHas('daily_salary_payment_receipt', [
+            'daily_salary_id' => $salaryC->id,
+        ]);
+    }
+
+    public function test_daily_salary_receipt_edit_rejects_mixed_employees(): void
+    {
+        $admin = $this->userWithRole('admin');
+        $employeeA = $this->userWithRole('staff');
+        $employeeB = $this->userWithRole('staff');
+        $store = $this->store();
+
+        $salaryA = $this->salary($store, $employeeA->id, 200000);
+        $salaryB = $this->salary($store, $employeeB->id, 150000);
+
+        Sanctum::actingAs($admin);
+        $create = $this->postJson('/procurement/payment-receipts', [
+            'payment_for' => 2,
+            'daily_salary_ids' => [$salaryA->id],
+            'transfer_amount' => 200000,
+        ]);
+        $create->assertCreated();
+        $receiptId = $create->json('data.id');
+
+        $this->postJson("/procurement/daily-salary-payment-receipts/{$receiptId}", [
+            'daily_salary_ids' => [$salaryA->id, $salaryB->id],
+            'transfer_amount' => 350000,
+        ])->assertStatus(400)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Pilih daily salary dari karyawan yang sama.');
+
+        // Tidak ada perubahan.
+        $this->assertEquals('2', $salaryA->fresh()->status);
+        $this->assertEquals('3', $salaryB->fresh()->status);
+    }
+
+    // ------------------------------------------------------------------
+    // 8. Hapus receipt: status semua salary kembali seperti semula (3)
+    // ------------------------------------------------------------------
+
+    public function test_daily_salary_receipt_delete_reverts_status(): void
+    {
+        $admin = $this->userWithRole('admin');
+        $employee = $this->userWithRole('staff');
+        $store = $this->store();
+
+        $salaryA = $this->salary($store, $employee->id, 200000, '1');
+        $salaryB = $this->salary($store, $employee->id, 150000, '3');
+
+        Sanctum::actingAs($admin);
+        $create = $this->postJson('/procurement/payment-receipts', [
+            'payment_for' => 2,
+            'daily_salary_ids' => [$salaryA->id, $salaryB->id],
+            'transfer_amount' => 350000,
+        ]);
+        $create->assertCreated();
+        $receiptId = $create->json('data.id');
+
+        $this->assertEquals('2', $salaryA->fresh()->status);
+        $this->assertEquals('2', $salaryB->fresh()->status);
+
+        $this->deleteJson("/procurement/payment-receipts/{$receiptId}")
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        // Receipt + pivot hilang, status kembali siap dibayar (3).
+        $this->assertDatabaseMissing('payment_receipts', ['id' => $receiptId]);
+        $this->assertDatabaseMissing('daily_salary_payment_receipt', [
+            'payment_receipt_id' => $receiptId,
+        ]);
+        $this->assertEquals('3', $salaryA->fresh()->status);
+        $this->assertEquals('3', $salaryB->fresh()->status);
+    }
 }

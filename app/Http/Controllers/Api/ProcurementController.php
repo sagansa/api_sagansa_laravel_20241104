@@ -1299,6 +1299,183 @@ class ProcurementController extends Controller
         });
     }
 
+    /**
+     * Update payment receipt daily salary (transfer payment).
+     *
+     * Mirror dengan updateFuelServicePaymentReceipt: edit daftar daily
+     * salary (add/remove) + metadata. Status disinkron dua arah — item yang
+     * di-remove kembali ke '3' (siap dibayar, konvensi yang sama dengan
+     * DetachAction admin Filament), item yang ditambah menjadi '2' (dibayar).
+     * Receipt tetap milik satu karyawan: user_id diisi ulang dari
+     * created_by_id item final.
+     *
+     * Otorisasi: hanya admin/super_admin. Hanya berlaku payment_for == '2'.
+     */
+    public function updateDailySalaryPaymentReceipt(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!($user->hasRole('admin') || $user->hasRole('super_admin'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk mengedit payment receipt.'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'daily_salary_ids' => 'required|array|min:1',
+            'daily_salary_ids.*' => 'exists:daily_salaries,id',
+            'transfer_amount' => 'required|numeric|min:1',
+            'notes' => 'nullable|string|max:500',
+            'image' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $receipt = PaymentReceipt::find($id);
+        if (!$receipt) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment receipt tidak ditemukan.'
+            ], 404);
+        }
+
+        // Hanya receipt daily salary yang bisa diedit via endpoint ini.
+        if ((string) $receipt->payment_for !== '2') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Endpoint ini hanya untuk payment receipt Gaji Harian.'
+            ], 400);
+        }
+
+        $newDailySalaryIds = $request->daily_salary_ids;
+
+        // Load item-item baru (state target).
+        $newSalaries = DailySalary::whereIn('id', $newDailySalaryIds)->get();
+        foreach ($newSalaries as $salary) {
+            // Pre-check: harus Transfer.
+            if ($salary->payment_type_id != 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Daily salary #{$salary->id} bukan metode Transfer."
+                ], 400);
+            }
+            // Pre-check: harus masih bisa dibayar ('1'/'3'), KECUALI jika sudah
+            // ter-attach ke receipt ini (status '2' karena receipt ini sendiri).
+            // Item yang lunas karena receipt lain ditolak.
+            $attachedToThis = $receipt->dailySalaries()
+                ->where('daily_salary_id', $salary->id)
+                ->exists();
+            if (!in_array($salary->status, ['1', '3']) && !$attachedToThis) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Daily salary #{$salary->id} sudah dibayar di receipt lain atau tidak valid."
+                ], 400);
+            }
+        }
+
+        // Aturan "satu karyawan" (sama dengan create).
+        $owners = $newSalaries->pluck('created_by_id')->filter()->unique();
+        if ($owners->count() > 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pilih daily salary dari karyawan yang sama.'
+            ], 400);
+        }
+
+        return DB::transaction(function () use ($request, $receipt, $newDailySalaryIds, $newSalaries) {
+            $currentAttachedIds = $receipt->dailySalaries()->pluck('daily_salaries.id')->all();
+
+            $toDetach = array_values(array_diff($currentAttachedIds, $newDailySalaryIds));
+            $toAttach = array_values(array_diff($newDailySalaryIds, $currentAttachedIds));
+
+            // Remove: detach + status kembali siap dibayar (3).
+            if (!empty($toDetach)) {
+                $receipt->dailySalaries()->detach($toDetach);
+                DailySalary::whereIn('id', $toDetach)->update(['status' => '3']);
+            }
+
+            // Add: attach + status jadi dibayar (2).
+            if (!empty($toAttach)) {
+                $receipt->dailySalaries()->attach($toAttach);
+                DailySalary::whereIn('id', $toAttach)->update(['status' => '2']);
+            }
+
+            // Update metadata. total_amount computed dari sum amount item final;
+            // user_id = karyawan pemilik item final (bukan admin peng-edit).
+            $receipt->update([
+                'transfer_amount' => (int) $request->transfer_amount,
+                'total_amount' => (int) $newSalaries->sum('amount'),
+                'user_id' => $newSalaries->first()->created_by_id,
+                'notes' => $request->notes,
+                'image' => $request->filled('image') ? $request->input('image') : $receipt->image,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment receipt berhasil diperbarui.',
+                'data' => $receipt->load(['dailySalaries.createdBy'])
+            ], 200);
+        });
+    }
+
+    /**
+     * Hapus payment receipt daily salary.
+     *
+     * Pivot dihapus dan SEMUA daily salary ter-attach dikembalikan ke status
+     * '3' (siap dibayar) — "seperti semula" sebelum dibayar — lalu receipt
+     * dihapus. Untuk saat ini hanya payment_for == '2' yang didukung.
+     *
+     * Otorisasi: hanya admin/super_admin.
+     */
+    public function destroyPaymentReceipt(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!($user->hasRole('admin') || $user->hasRole('super_admin'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk menghapus payment receipt.'
+            ], 403);
+        }
+
+        $receipt = PaymentReceipt::find($id);
+        if (!$receipt) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment receipt tidak ditemukan.'
+            ], 404);
+        }
+
+        if ((string) $receipt->payment_for !== '2') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya payment receipt Gaji Harian yang dapat dihapus.'
+            ], 400);
+        }
+
+        DB::transaction(function () use ($receipt) {
+            $salaryIds = $receipt->dailySalaries()->pluck('daily_salaries.id')->all();
+
+            $receipt->dailySalaries()->detach();
+
+            if (!empty($salaryIds)) {
+                DailySalary::whereIn('id', $salaryIds)->update(['status' => '3']);
+            }
+
+            $receipt->delete();
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Payment receipt berhasil dihapus. Status daily salary dikembalikan menjadi siap dibayar.',
+        ]);
+    }
+
     public function detailRequests(Request $request)
     {
         $request->validate([
