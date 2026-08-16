@@ -59,14 +59,17 @@ class ProcurementNotificationService
      * Push "Pembayaran Telah Dilakukan" ke created_by tiap record ter-attach
      * (kecuali pembayar). payment_for: 1=FuelService, 2=DailySalary, 3=Invoice.
      *
+     * @param  int|string|null  $payerId  User yang melakukan pembayaran
+     *   (dikecualikan dari penerima). Jika null, default ke $receipt->user_id
+     *   (backward-compatible dengan caller lama).
      * @return int Jumlah user yang berhasil dikirimi.
      */
-    public function notifyPaymentReceiptPaid(PaymentReceipt $receipt): int
+    public function notifyPaymentReceiptPaid(PaymentReceipt $receipt, int|string|null $payerId = null): int
     {
         $creatorIds = $this->paidRecordCreators($receipt);
 
         // Hapus pembayar sendiri & nilai non-numeric (created_by bisa uuid).
-        $payerId = $receipt->user_id;
+        $payerId ??= $receipt->user_id;
         $recipientIds = array_values(array_filter(
             array_unique($creatorIds),
             fn ($id) => is_numeric($id) && (int) $id !== (int) $payerId,

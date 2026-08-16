@@ -49,6 +49,10 @@ class DailySalaryController extends Controller
             $query->where('date', '<=', $request->date_to);
         }
 
+        // Total seluruh nominal hasil filter (server-side). Client mem-paginasi
+        // list 20/halaman, jadi penjumlahan client-side tidak akurat.
+        $totalAmount = (clone $query)->sum('amount');
+
         $dailySalaries = $query->orderBy('date', 'desc')->paginate($request->get('per_page', 20));
 
         return response()->json([
@@ -59,6 +63,7 @@ class DailySalaryController extends Controller
                 'last_page' => $dailySalaries->lastPage(),
                 'per_page' => $dailySalaries->perPage(),
                 'total' => $dailySalaries->total(),
+                'total_amount' => (int) $totalAmount,
             ],
         ]);
     }

@@ -714,6 +714,7 @@ class ProcurementController extends Controller
         $query = PaymentReceipt::with([
             'invoicePurchases.store', 'invoicePurchases.supplier', 'supplier',
             'fuelServices.vehicle', 'fuelServices.createdBy',
+            'dailySalaries.createdBy',
         ]);
 
         if ($request->filled('payment_for')) {
@@ -752,6 +753,7 @@ class ProcurementController extends Controller
             'invoicePurchases.detailInvoices.detailRequest.product.unit',
             'fuelServices.vehicle',
             'fuelServices.createdBy',
+            'dailySalaries.createdBy',
             'supplier',
         ])->find($id);
 
@@ -994,6 +996,13 @@ class ProcurementController extends Controller
 
         $salaries = DailySalary::whereIn('id', $dailySalaryIds)->get();
 
+        if ($salaries->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Daily salary tidak ditemukan.'
+            ], 400);
+        }
+
         foreach ($salaries as $salary) {
             if (!in_array($salary->status, ['1', '3'])) {
                 return response()->json([
@@ -1009,6 +1018,18 @@ class ProcurementController extends Controller
             }
         }
 
+        // Semua daily salary harus milik karyawan yang sama (aturan "satu
+        // karyawan" yang selama ini hanya ada di client mobile). Backend
+        // menurunkan penerima receipt dari created_by_id salary, bukan dari
+        // admin yang login.
+        $owners = $salaries->pluck('created_by_id')->filter()->unique();
+        if ($owners->count() > 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pilih daily salary dari karyawan yang sama.'
+            ], 400);
+        }
+
         $receipt = DB::transaction(function () use ($request, $dailySalaryIds, $salaries) {
             $totalAmount = $request->total_amount ?? $salaries->sum('amount');
 
@@ -1021,7 +1042,7 @@ class ProcurementController extends Controller
                 'payment_for' => '2',
                 'total_amount' => (int) $totalAmount,
                 'transfer_amount' => (int) $request->transfer_amount,
-                'user_id' => $request->user()->id,
+                'user_id' => $salaries->first()->created_by_id,
                 'notes' => $request->notes,
                 'image' => $imagePath,
             ]);
@@ -1038,12 +1059,15 @@ class ProcurementController extends Controller
         });
 
         // Di luar transaction: kegagalan FCM tidak boleh membatalkan pembayaran.
-        $this->procurementNotification->notifyPaymentReceiptPaid($receipt);
+        // payer = admin yang melakukan pembayaran (bukan penerima receipt yang
+        // kini = karyawan), supaya admin tidak menerima notifikasi atas
+        // pembayaran yang dia sendiri lakukan.
+        $this->procurementNotification->notifyPaymentReceiptPaid($receipt, $request->user()->id);
 
         return response()->json([
             'success' => true,
             'message' => 'Payment receipt gaji berhasil dibuat.',
-            'data' => $receipt->load('dailySalaries')
+            'data' => $receipt->load('dailySalaries.createdBy')
         ], 201);
     }
 
