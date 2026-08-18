@@ -94,6 +94,40 @@ class NotificationController extends Controller
         ]);
     }
 
+    /**
+     * Hapus satu notifikasi milik user login. Id milik user lain → 404.
+     */
+    public function destroy(Request $request, $id)
+    {
+        $userId = $request->user()->id;
+
+        $notification = Notification::where('user_id', $userId)
+            ->findOrFail($id);
+
+        $notification->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Notifikasi dihapus.',
+        ]);
+    }
+
+    /**
+     * Hapus semua notifikasi milik user login. Mengembalikan jumlah terhapus.
+     */
+    public function clearAll(Request $request)
+    {
+        $userId = $request->user()->id;
+
+        $deleted = Notification::where('user_id', $userId)->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Semua notifikasi dihapus.',
+            'data' => ['deleted' => $deleted],
+        ]);
+    }
+
     private function format(Notification $n): array
     {
         return [

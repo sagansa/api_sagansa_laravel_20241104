@@ -434,4 +434,90 @@ class NotificationCenterTest extends TestCase
             $this->assertNotContains($bId, $ids, 'User A tidak boleh melihat notif user B.');
         }
     }
+
+    // ------------------------------------------------------------------
+    // 4. Hapus notifikasi (satuan & clear-all)
+    // ------------------------------------------------------------------
+
+    public function test_delete_single_notification_owned_by_user(): void
+    {
+        $user = $this->userWithRole('admin');
+
+        $notification = Notification::create([
+            'user_id' => $user->id,
+            'type' => 'invoice_transfer_created',
+            'title' => 'Hapus Saya',
+            'body' => 'body',
+            'data' => null,
+        ]);
+
+        Sanctum::actingAs($user);
+        $res = $this->deleteJson("/notifications/{$notification->id}");
+        $res->assertOk();
+        $res->assertJsonPath('status', 'success');
+
+        $this->assertDatabaseMissing('notification_center', [
+            'id' => $notification->id,
+        ]);
+    }
+
+    public function test_delete_notification_owned_by_other_user_is_denied(): void
+    {
+        $owner = $this->userWithRole('admin');
+        $other = $this->userWithRole('admin');
+
+        $notification = Notification::create([
+            'user_id' => $owner->id,
+            'type' => 'invoice_transfer_created',
+            'title' => 'Milik Orang Lain',
+            'body' => 'body',
+            'data' => null,
+        ]);
+
+        Sanctum::actingAs($other);
+        $res = $this->deleteJson("/notifications/{$notification->id}");
+        $res->assertNotFound();
+
+        // Notifikasi milik owner tetap ada.
+        $this->assertDatabaseHas('notification_center', [
+            'id' => $notification->id,
+            'user_id' => $owner->id,
+        ]);
+    }
+
+    public function test_clear_all_deletes_only_owned_notifications(): void
+    {
+        $user = $this->userWithRole('admin');
+        $other = $this->userWithRole('admin');
+
+        Notification::create([
+            'user_id' => $user->id,
+            'type' => 'invoice_transfer_created',
+            'title' => 'Milik Saya 1',
+            'body' => 'body',
+            'data' => null,
+        ]);
+        Notification::create([
+            'user_id' => $user->id,
+            'type' => 'payment_receipt_paid',
+            'title' => 'Milik Saya 2',
+            'body' => 'body',
+            'data' => null,
+        ]);
+        Notification::create([
+            'user_id' => $other->id,
+            'type' => 'invoice_transfer_created',
+            'title' => 'Milik Orang Lain',
+            'body' => 'body',
+            'data' => null,
+        ]);
+
+        Sanctum::actingAs($user);
+        $res = $this->deleteJson('/notifications/clear');
+        $res->assertOk();
+        $this->assertEquals(2, $res->json('data.deleted'));
+
+        $this->assertSame(0, Notification::where('user_id', $user->id)->count());
+        $this->assertSame(1, Notification::where('user_id', $other->id)->count());
+    }
 }

@@ -13,25 +13,30 @@ class RoleAndPermissionSeeder extends Seeder
         // Reset cached roles and permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // Buat Permissions untuk presence management
-        Permission::create(['name' => 'view presences']);
-        Permission::create(['name' => 'create presences']);
-        Permission::create(['name' => 'edit presences']);
-        Permission::create(['name' => 'delete presences']);
-        Permission::create(['name' => 'view reports']);
-        Permission::create(['name' => 'manage users']);
+        // Buat Permissions untuk presence management (idempoten).
+        Permission::firstOrCreate(['name' => 'view presences']);
+        Permission::firstOrCreate(['name' => 'create presences']);
+        Permission::firstOrCreate(['name' => 'edit presences']);
+        Permission::firstOrCreate(['name' => 'delete presences']);
+        Permission::firstOrCreate(['name' => 'view reports']);
+        Permission::firstOrCreate(['name' => 'manage users']);
 
-        // Buat Roles
-        $staffRole = Role::create(['name' => 'staff']);
-        $staffRole->givePermissionTo(['view presences']);
+        // Buat Roles (idempoten — aman dijalankan berulang).
+        $staffRole = Role::firstOrCreate(['name' => 'staff']);
+        $staffRole->syncPermissions(['view presences']);
 
-        $adminRole = Role::create(['name' => 'admin']);
-        $adminRole->givePermissionTo(Permission::all());
+        $adminRole = Role::firstOrCreate(['name' => 'admin']);
+        $adminRole->syncPermissions(Permission::all());
 
-        $managerRole = Role::create(['name' => 'manager']);
-        $managerRole->givePermissionTo(['view presences', 'view reports']);
+        $managerRole = Role::firstOrCreate(['name' => 'manager']);
+        $managerRole->syncPermissions(['view presences', 'view reports']);
 
-        $superAdminRole = Role::create(['name' => 'super_admin']);
-        $superAdminRole->givePermissionTo(Permission::all());
+        $superAdminRole = Role::firstOrCreate(['name' => 'super_admin']);
+        $superAdminRole->syncPermissions(Permission::all());
+
+        // Role storage-staff (staff gudang) — penerima notifikasi sales order
+        // online & pengingat aset.
+        $storageStaffRole = Role::firstOrCreate(['name' => 'storage-staff']);
+        $storageStaffRole->syncPermissions(['view presences']);
     }
 }

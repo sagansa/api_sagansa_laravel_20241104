@@ -106,6 +106,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
             Route::post('/read-all', [NotificationController::class, 'markAllRead']);
             Route::post('/{id}/read', [NotificationController::class, 'markRead']);
+            Route::delete('/clear', [NotificationController::class, 'clearAll']);
+            Route::delete('/{id}', [NotificationController::class, 'destroy']);
         });
 
     // Sales Order Delivery Routes
