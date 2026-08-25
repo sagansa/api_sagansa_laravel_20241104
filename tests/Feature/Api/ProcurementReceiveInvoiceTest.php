@@ -36,7 +36,7 @@ class ProcurementReceiveInvoiceTest extends TestCase
         Sanctum::actingAs($this->userWithRole('staff'));
         $invoice = $this->makeInvoice('1');
 
-        $res = $this->postJson("/api/procurement/invoices/{$invoice->id}/receive");
+        $res = $this->postJson("/procurement/invoices/{$invoice->id}/receive");
 
         $res->assertOk()
             ->assertJson(['success' => true]);
@@ -48,7 +48,7 @@ class ProcurementReceiveInvoiceTest extends TestCase
         Sanctum::actingAs($this->userWithRole('admin'));
         $invoice = $this->makeInvoice('1');
 
-        $res = $this->postJson("/api/procurement/invoices/{$invoice->id}/receive");
+        $res = $this->postJson("/procurement/invoices/{$invoice->id}/receive");
 
         $res->assertOk();
         $this->assertEquals('2', $invoice->fresh()->order_status);
@@ -59,7 +59,7 @@ class ProcurementReceiveInvoiceTest extends TestCase
         Sanctum::actingAs($this->userWithRole('super_admin'));
         $invoice = $this->makeInvoice('1');
 
-        $res = $this->postJson("/api/procurement/invoices/{$invoice->id}/receive");
+        $res = $this->postJson("/procurement/invoices/{$invoice->id}/receive");
 
         $res->assertOk();
         $this->assertEquals('2', $invoice->fresh()->order_status);
@@ -69,7 +69,7 @@ class ProcurementReceiveInvoiceTest extends TestCase
     {
         $invoice = $this->makeInvoice('1');
 
-        $res = $this->postJson("/api/procurement/invoices/{$invoice->id}/receive");
+        $res = $this->postJson("/procurement/invoices/{$invoice->id}/receive");
 
         $res->assertUnauthorized();
     }
@@ -88,7 +88,7 @@ class ProcurementReceiveInvoiceTest extends TestCase
         Sanctum::actingAs($this->userWithRole('admin'));
         $invoice = $this->makeInvoice('2'); // already received
 
-        $res = $this->postJson("/api/procurement/invoices/{$invoice->id}/receive");
+        $res = $this->postJson("/procurement/invoices/{$invoice->id}/receive");
 
         $res->assertStatus(400)
             ->assertJson(['success' => false]);
@@ -100,7 +100,7 @@ class ProcurementReceiveInvoiceTest extends TestCase
         Sanctum::actingAs($user);
         $invoice = $this->makeInvoice('1');
 
-        $res = $this->postJson("/api/procurement/invoices/{$invoice->id}/receive");
+        $res = $this->postJson("/procurement/invoices/{$invoice->id}/receive");
 
         $res->assertForbidden();
     }

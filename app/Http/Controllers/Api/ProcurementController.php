@@ -308,6 +308,10 @@ class ProcurementController extends Controller
             $query->where('store_id', $request->store_id);
         }
 
+        if ($request->has('supplier_id')) {
+            $query->where('supplier_id', $request->supplier_id);
+        }
+
         $perPage = $request->query('per_page', 10);
         $invoices = $query->orderBy('date', 'desc')->orderBy('id', 'desc')->paginate($perPage);
 
@@ -1420,6 +1424,111 @@ class ProcurementController extends Controller
                 'success' => true,
                 'message' => 'Payment receipt berhasil diperbarui.',
                 'data' => $receipt->load(['dailySalaries.createdBy'])
+            ], 200);
+        });
+    }
+
+    /**
+     * Update invoice payment receipt (transfer payment).
+     *
+     * Edit daftar invoice purchases (add/remove) + metadata (transfer_amount,
+     * notes, image). Status invoice disinkron dua arah — invoice yang di-remove
+     * kembali ke '1' (belum dibayar), invoice yang ditambah menjadi '2' (sudah dibayar).
+     *
+     * Otorisasi: hanya admin/super_admin.
+     */
+    public function updatePaymentReceipt(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!($user->hasRole('admin') || $user->hasRole('super_admin'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk mengedit payment receipt.'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'invoice_ids' => 'required|array|min:1',
+            'invoice_ids.*' => 'exists:invoice_purchases,id',
+            'transfer_amount' => 'required|numeric|min:1',
+            'notes' => 'nullable|string|max:500',
+            'image' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $receipt = PaymentReceipt::find($id);
+        if (!$receipt) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment receipt tidak ditemukan.'
+            ], 404);
+        }
+
+        // Pastikan receipt ini untuk invoice purchase (bukan fuel service '1' atau daily salary '2')
+        if ((string) $receipt->payment_for === '1' || (string) $receipt->payment_for === '2') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Endpoint ini hanya untuk payment receipt Invoice Pembelian.'
+            ], 400);
+        }
+
+        $newInvoiceIds = $request->invoice_ids;
+
+        // Load invoice baru (state target).
+        $newInvoices = InvoicePurchase::whereIn('id', $newInvoiceIds)->get();
+        foreach ($newInvoices as $inv) {
+            // Pre-check: harus pending (1), KECUALI jika sudah ter-attach ke
+            // receipt ini (status '2' karena receipt ini sendiri).
+            $attachedToThis = $receipt->invoicePurchases()
+                ->where('invoice_purchase_id', $inv->id)
+                ->exists();
+            if ($inv->payment_status != '1' && !$attachedToThis) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Invoice #{$inv->id} sudah dibayar di receipt lain atau tidak valid."
+                ], 400);
+            }
+        }
+
+        return DB::transaction(function () use ($request, $receipt, $newInvoiceIds, $newInvoices) {
+            $currentAttachedIds = $receipt->invoicePurchases()->pluck('invoice_purchases.id')->all();
+
+            $toDetach = array_values(array_diff($currentAttachedIds, $newInvoiceIds));
+            $toAttach = array_values(array_diff($newInvoiceIds, $currentAttachedIds));
+
+            // Remove: detach + status kembali belum dibayar (1).
+            if (!empty($toDetach)) {
+                $receipt->invoicePurchases()->detach($toDetach);
+                InvoicePurchase::whereIn('id', $toDetach)->update(['payment_status' => '1']);
+            }
+
+            // Add: attach + status jadi dibayar (2).
+            if (!empty($toAttach)) {
+                $receipt->invoicePurchases()->attach($toAttach);
+                InvoicePurchase::whereIn('id', $toAttach)->update(['payment_status' => '2']);
+            }
+
+            // Update metadata. total_amount computed dari sum total_price invoice final.
+            $firstInvoice = $newInvoices->first();
+            $receipt->update([
+                'transfer_amount' => (int) $request->transfer_amount,
+                'total_amount' => (int) $newInvoices->sum('total_price'),
+                'supplier_id' => $firstInvoice ? $firstInvoice->supplier_id : $receipt->supplier_id,
+                'notes' => $request->notes,
+                'image' => $request->filled('image') ? $request->input('image') : $receipt->image,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment receipt berhasil diperbarui.',
+                'data' => $receipt->load(['invoicePurchases.supplier', 'supplier'])
             ], 200);
         });
     }
