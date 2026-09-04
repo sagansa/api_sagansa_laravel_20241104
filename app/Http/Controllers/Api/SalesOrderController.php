@@ -836,4 +836,61 @@ class SalesOrderController extends Controller
             ? 'Sudah pernah diprint'
             : 'Belum pernah diprint';
     }
+
+    /**
+     * Kandidat penjualan untuk dikaitkan ke invoice pembelian (staff/admin).
+     * q: receipt_no LIKE ATAU id persis (order direct tidak punya resi).
+     */
+    public function linkCandidates(Request $request)
+    {
+        $user = $request->user();
+        $allowed = $user
+            && ($user->hasRole('admin') || $user->hasRole('super_admin')
+                || $user->hasRole('staff'));
+        if (!$allowed) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya admin/staff yang dapat mencari penjualan.',
+            ], 403);
+        }
+
+        $q = trim((string) $request->query('q', ''));
+        if ($q === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Parameter q wajib diisi.',
+            ], 422);
+        }
+
+        $for = $request->query('for');
+        $rows = $this->orderRowQuery()
+            // orderRowQuery() belum memilih kolom `for` — tambahkan di sini
+            // supaya respons memuat tipe order tanpa mengubah query bersama.
+            ->addSelect('sales_orders.for')
+            ->whereNull('sales_orders.deleted_at')
+            ->when($for !== null && $for !== '', function ($query) use ($for) {
+                $query->where('sales_orders.for', $for);
+            })
+            ->where(function ($query) use ($q) {
+                $query->where('sales_orders.receipt_no', 'like', "%{$q}%")
+                    ->orWhere('sales_orders.id', $q);
+            })
+            ->orderByDesc('sales_orders.id')
+            ->limit(10)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows->map(function ($row) {
+                return [
+                    'id' => $row->id,
+                    'for' => (int) $row->for,
+                    'receipt_no' => $row->receipt_no,
+                    'store_name' => $row->store_name,
+                    'delivery_date' => $row->delivery_date,
+                    'total_price' => $row->total_price,
+                ];
+            }),
+        ]);
+    }
 }

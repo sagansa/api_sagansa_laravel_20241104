@@ -144,4 +144,49 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
         $res->assertOk()->assertJsonPath('data.sales_order', null);
     }
+
+    public function test_link_candidates_search_by_receipt_no(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $order = \Illuminate\Support\Facades\DB::table('sales_orders')
+            ->whereNotNull('receipt_no')->first();
+        if (!$order) {
+            $this->markTestSkipped('Need a sales order with receipt_no');
+        }
+
+        $res = $this->getJson('/sales-orders/link-candidates?q=' . $order->receipt_no);
+
+        $res->assertOk()->assertJson(['success' => true]);
+        $ids = array_column($res->json('data'), 'id');
+        $this->assertContains((int) $order->id, $ids);
+    }
+
+    public function test_link_candidates_search_by_id(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $order = \Illuminate\Support\Facades\DB::table('sales_orders')->first();
+        if (!$order) {
+            $this->markTestSkipped('Need at least 1 sales order');
+        }
+
+        $res = $this->getJson('/sales-orders/link-candidates?q=' . $order->id);
+
+        $res->assertOk();
+        $ids = array_column($res->json('data'), 'id');
+        $this->assertContains((int) $order->id, $ids);
+    }
+
+    public function test_link_candidates_forbidden_for_sales_role(): void
+    {
+        Sanctum::actingAs($this->userWithRole('sales'));
+
+        $this->getJson('/sales-orders/link-candidates?q=x')->assertStatus(403);
+    }
+
+    public function test_link_candidates_requires_q(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+
+        $this->getJson('/sales-orders/link-candidates')->assertStatus(422);
+    }
 }

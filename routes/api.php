@@ -112,6 +112,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Sales Order Delivery Routes
     Route::get('/sales-orders/search', [\App\Http\Controllers\Api\SalesOrderController::class, 'search']);
+    // Kandidat penjualan utk dikaitkan ke invoice pembelian (admin/staff).
+    Route::get('/sales-orders/link-candidates', [\App\Http\Controllers\Api\SalesOrderController::class, 'linkCandidates']);
     Route::post('/sales-orders/ready-to-ship', [\App\Http\Controllers\Api\SalesOrderController::class, 'markReadyToShip']);
     Route::post('/sales-orders/delivery-update', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateDelivery']);
     Route::post('/sales-orders/payment-proofs/printed', [\App\Http\Controllers\Api\SalesOrderController::class, 'markPaymentProofsPrinted']);
