@@ -651,6 +651,28 @@ class ProcurementController extends Controller
             }
         }
 
+        // Validasi sales_order_id SEKALI di sini, sebelum transaksi & sebelum
+        // penulisan apa pun, agar 422 tidak meninggalkan partial write.
+        // Key ada + numerik terisi → set; key ada + kosong/non-numerik → lepas (null);
+        // numerik tapi tidak ditemukan → 422.
+        if ($request->has('sales_order_id')) {
+            $value = $request->sales_order_id;
+            $invoice->sales_order_id = (filled($value) && is_numeric($value))
+                ? (int) $value
+                : null;
+            // Validasi eksistensi manual (string kosong = lepas kaitan).
+            if ($invoice->sales_order_id !== null
+                && !\Illuminate\Support\Facades\DB::table('sales_orders')
+                    ->where('id', $invoice->sales_order_id)
+                    ->whereNull('deleted_at')
+                    ->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Sales order tidak ditemukan.',
+                ], 422);
+            }
+        }
+
         return DB::transaction(function () use ($invoice, $request) {
             if ($request->filled('supplier_id')) {
                 $invoice->supplier_id = $request->supplier_id;
@@ -690,24 +712,6 @@ class ProcurementController extends Controller
                 }
             } else {
                 $totalPrice = $invoice->detailInvoices->sum('subtotal_invoice');
-            }
-
-            if ($request->has('sales_order_id')) {
-                $value = $request->sales_order_id;
-                $invoice->sales_order_id = (filled($value) && is_numeric($value))
-                    ? (int) $value
-                    : null;
-                // Validasi eksistensi manual (string kosong = lepas kaitan).
-                if ($invoice->sales_order_id !== null
-                    && !\Illuminate\Support\Facades\DB::table('sales_orders')
-                        ->where('id', $invoice->sales_order_id)
-                        ->whereNull('deleted_at')
-                        ->exists()) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Sales order tidak ditemukan.',
-                    ], 422);
-                }
             }
 
             $invoice->total_price = $totalPrice + ($invoice->taxes ?? 0) - ($invoice->discounts ?? 0);
