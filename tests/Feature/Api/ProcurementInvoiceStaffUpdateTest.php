@@ -118,4 +118,30 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
         $res->assertStatus(422);
     }
+
+    public function test_show_invoice_includes_sales_order_summary(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $order = \Illuminate\Support\Facades\DB::table('sales_orders')->first();
+        if (!$order) {
+            $this->markTestSkipped('Need at least 1 sales order in database');
+        }
+        $invoice = $this->makeInvoice(['sales_order_id' => $order->id]);
+
+        $res = $this->getJson("/procurement/invoices/{$invoice->id}");
+
+        $res->assertOk()
+            ->assertJsonPath('data.sales_order_id', $order->id)
+            ->assertJsonPath('data.sales_order.id', $order->id);
+    }
+
+    public function test_show_invoice_without_link_has_null_sales_order(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $invoice = $this->makeInvoice();
+
+        $res = $this->getJson("/procurement/invoices/{$invoice->id}");
+
+        $res->assertOk()->assertJsonPath('data.sales_order', null);
+    }
 }

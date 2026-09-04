@@ -336,6 +336,7 @@ class ProcurementController extends Controller
             'store', 'supplier.bank', 'createdBy',
             'detailInvoices.detailRequest.product.unit',
             'detailInvoices.detailRequest.paymentType',
+            'salesOrder', 'salesOrder.store',
         ])->find($id);
 
         if (!$invoice) {
