@@ -38,5 +38,10 @@ class RoleAndPermissionSeeder extends Seeder
         // online & pengingat aset.
         $storageStaffRole = Role::firstOrCreate(['name' => 'storage-staff']);
         $storageStaffRole->syncPermissions(['view presences']);
+
+        // Role sales — kontributor sales order; tidak boleh edit invoice
+        // procurement (lihat ProcurementInvoiceStaffUpdateTest).
+        $salesRole = Role::firstOrCreate(['name' => 'sales']);
+        $salesRole->syncPermissions(['view presences']);
     }
 }

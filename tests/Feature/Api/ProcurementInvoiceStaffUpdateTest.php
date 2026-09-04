@@ -119,6 +119,19 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
         $res->assertStatus(422);
     }
 
+    public function test_non_numeric_sales_order_id_returns_422_and_keeps_null(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $invoice = $this->makeInvoice();
+
+        $res = $this->putJson("/procurement/invoices/{$invoice->id}", [
+            'sales_order_id' => 'abc',
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertNull($invoice->fresh()->sales_order_id);
+    }
+
     public function test_show_invoice_includes_sales_order_summary(): void
     {
         Sanctum::actingAs($this->userWithRole('staff'));
@@ -143,6 +156,36 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
         $res = $this->getJson("/procurement/invoices/{$invoice->id}");
 
         $res->assertOk()->assertJsonPath('data.sales_order', null);
+    }
+
+    public function test_show_invoice_with_soft_deleted_sales_order_has_null_sales_order(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $order = \Illuminate\Support\Facades\DB::table('sales_orders')->first();
+        if (!$order) {
+            $this->markTestSkipped('Need at least 1 sales order in database');
+        }
+
+        // Soft-delete via raw update (deleted_at), lalu tautkan ke invoice.
+        // DB testing persisten antar-test — selalu pulihkan deleted_at asli.
+        $originalDeletedAt = $order->deleted_at;
+        \Illuminate\Support\Facades\DB::table('sales_orders')
+            ->where('id', $order->id)
+            ->update(['deleted_at' => now()]);
+
+        try {
+            $invoice = $this->makeInvoice(['sales_order_id' => $order->id]);
+
+            $res = $this->getJson("/procurement/invoices/{$invoice->id}");
+
+            $res->assertOk()
+                ->assertJsonPath('data.sales_order_id', (int) $order->id)
+                ->assertJsonPath('data.sales_order', null);
+        } finally {
+            \Illuminate\Support\Facades\DB::table('sales_orders')
+                ->where('id', $order->id)
+                ->update(['deleted_at' => $originalDeletedAt]);
+        }
     }
 
     public function test_link_candidates_search_by_receipt_no(): void
@@ -222,5 +265,18 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
         $this->postJson("/procurement/invoices/{$invoice->id}/image", [])
             ->assertStatus(422);
+    }
+
+    public function test_image_update_rejects_path_outside_invoice_folder(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $invoice = $this->makeInvoice(['image' => 'images/InvoicePurchase/old.webp']);
+
+        $res = $this->postJson("/procurement/invoices/{$invoice->id}/image", [
+            'image' => 'images/Delivery/evil.webp',
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertSame('images/InvoicePurchase/old.webp', $invoice->fresh()->image);
     }
 }

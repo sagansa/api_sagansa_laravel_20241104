@@ -654,23 +654,31 @@ class ProcurementController extends Controller
 
         // Validasi sales_order_id SEKALI di sini, sebelum transaksi & sebelum
         // penulisan apa pun, agar 422 tidak meninggalkan partial write.
-        // Key ada + numerik terisi → set; key ada + kosong/non-numerik → lepas (null);
-        // numerik tapi tidak ditemukan → 422.
+        // null / '' (setelah trim) → lepas kaitan (null); numerik → set
+        // (+ cek eksistensi, 422 bila tidak ada); terisi non-numerik
+        // ('abc', '12abc', array, dsb.) → 422, BUKAN diam-diam melepas kaitan.
         if ($request->has('sales_order_id')) {
             $value = $request->sales_order_id;
-            $invoice->sales_order_id = (filled($value) && is_numeric($value))
-                ? (int) $value
-                : null;
-            // Validasi eksistensi manual (string kosong = lepas kaitan).
-            if ($invoice->sales_order_id !== null
-                && !\Illuminate\Support\Facades\DB::table('sales_orders')
+            $trimmed = is_string($value) ? trim($value) : $value;
+            if ($trimmed === null || $trimmed === '') {
+                $invoice->sales_order_id = null;
+            } elseif (!is_numeric($trimmed) || is_array($trimmed)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Sales order tidak valid.',
+                ], 422);
+            } else {
+                $invoice->sales_order_id = (int) $trimmed;
+                // Validasi eksistensi manual (termasuk soft-deleted → tidak ada).
+                if (!\Illuminate\Support\Facades\DB::table('sales_orders')
                     ->where('id', $invoice->sales_order_id)
                     ->whereNull('deleted_at')
                     ->exists()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Sales order tidak ditemukan.',
-                ], 422);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sales order tidak ditemukan.',
+                    ], 422);
+                }
             }
         }
 
@@ -760,8 +768,19 @@ class ProcurementController extends Controller
             'image' => 'required|string',
         ]);
 
+        $newPath = trim((string) $request->input('image'));
+
+        // Endpoint ini menghapus file lama — path baru wajib berada di folder
+        // invoice agar tidak bisa menunjuk path storage arbitrer (mis.
+        // 'images/Delivery/evil.webp').
+        if (!str_starts_with($newPath, 'images/InvoicePurchase/')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Path image tidak valid.',
+            ], 422);
+        }
+
         $oldPath = $invoice->image;
-        $newPath = $request->input('image');
 
         if ($oldPath && $oldPath !== $newPath) {
             try {
