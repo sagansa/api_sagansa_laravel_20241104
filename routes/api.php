@@ -194,6 +194,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showInvoice']);
         Route::get('/invoices/{id}/qris', [\App\Http\Controllers\Api\ProcurementController::class, 'invoiceQris']);
         Route::put('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'updateInvoice']);
+        // Ganti image invoice SAJA (admin/staff, semua payment_status).
+        Route::post('/invoices/{id}/image', [\App\Http\Controllers\Api\ProcurementController::class, 'updateInvoiceImage']);
         Route::post('/invoices/{id}/receive', [\App\Http\Controllers\Api\ProcurementController::class, 'receiveInvoice']);
         Route::delete('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'destroyInvoice']);
         Route::delete('/requests/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'destroyRequest']);

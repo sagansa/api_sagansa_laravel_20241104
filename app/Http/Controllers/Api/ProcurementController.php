@@ -731,6 +731,65 @@ class ProcurementController extends Controller
     }
 
     /**
+     * Ganti image invoice SAJA — admin/super_admin/staff, semua payment_status.
+     * Skenario: bayar dulu, invoice (foto) final dari supplier keluar belakangan.
+     * Tidak menyentuh payment_status / field lain.
+     */
+    public function updateInvoiceImage($id, Request $request)
+    {
+        $user = $request->user();
+        $allowed = $user
+            && ($user->hasRole('admin') || $user->hasRole('super_admin')
+                || $user->hasRole('staff'));
+        if (!$allowed) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk mengubah foto invoice.',
+            ], 403);
+        }
+
+        $invoice = InvoicePurchase::find($id);
+        if (!$invoice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invoice tidak ditemukan.',
+            ], 404);
+        }
+
+        $request->validate([
+            'image' => 'required|string',
+        ]);
+
+        $oldPath = $invoice->image;
+        $newPath = $request->input('image');
+
+        if ($oldPath && $oldPath !== $newPath) {
+            try {
+                app(\App\Contracts\ImageStorageContract::class)->delete($oldPath);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Gagal hapus image invoice lama.', [
+                    'invoice_id' => $invoice->id,
+                    'path' => $oldPath,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $invoice->image = $newPath;
+        $invoice->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Foto invoice berhasil diperbarui.',
+            'data' => [
+                'id' => $invoice->id,
+                'image' => $invoice->image,
+                'image_url' => \App\Support\ImageUrlResolver::resolve($invoice->image),
+            ],
+        ]);
+    }
+
+    /**
      * Get list of payment receipts (for invoice purchases).
      */
     public function paymentReceipts(Request $request)

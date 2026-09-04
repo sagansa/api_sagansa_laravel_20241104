@@ -189,4 +189,38 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
         $this->getJson('/sales-orders/link-candidates')->assertStatus(422);
     }
+
+    public function test_staff_can_replace_image_on_paid_invoice(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $invoice = $this->makeInvoice(['payment_status' => '2', 'image' => 'images/InvoicePurchase/old.webp']);
+
+        $res = $this->postJson("/procurement/invoices/{$invoice->id}/image", [
+            'image' => 'images/InvoicePurchase/final.webp',
+        ]);
+
+        $res->assertOk()->assertJson(['success' => true]);
+        $this->assertSame('images/InvoicePurchase/final.webp', $invoice->fresh()->image);
+        $this->assertSame('2', $invoice->fresh()->payment_status);
+        $this->assertNotNull($res->json('data.image_url'));
+    }
+
+    public function test_image_update_forbidden_for_sales_role(): void
+    {
+        Sanctum::actingAs($this->userWithRole('sales'));
+        $invoice = $this->makeInvoice();
+
+        $this->postJson("/procurement/invoices/{$invoice->id}/image", [
+            'image' => 'images/InvoicePurchase/x.webp',
+        ])->assertStatus(403);
+    }
+
+    public function test_image_update_requires_image(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $invoice = $this->makeInvoice();
+
+        $this->postJson("/procurement/invoices/{$invoice->id}/image", [])
+            ->assertStatus(422);
+    }
 }
