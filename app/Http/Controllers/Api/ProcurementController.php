@@ -614,7 +614,8 @@ class ProcurementController extends Controller
         }
 
         $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin');
-        if (!$isAdmin && $invoice->created_by_id !== $user->id) {
+        $isStaff = $user->hasRole('staff');
+        if (!$isAdmin && !$isStaff && $invoice->created_by_id != $user->id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Anda tidak memiliki akses untuk mengedit invoice ini.'
@@ -633,6 +634,7 @@ class ProcurementController extends Controller
             'items.*.price' => 'nullable|numeric|min:0',
             'items.*.subtotal_invoice' => 'nullable|numeric|min:0',
             'items.*.quantity' => 'required_with:items|numeric|min:1',
+            'sales_order_id' => 'nullable',
         ]);
 
         // Minimal salah satu dari price / subtotal_invoice wajib ada per item.
@@ -690,6 +692,24 @@ class ProcurementController extends Controller
                 $totalPrice = $invoice->detailInvoices->sum('subtotal_invoice');
             }
 
+            if ($request->has('sales_order_id')) {
+                $value = $request->sales_order_id;
+                $invoice->sales_order_id = (filled($value) && is_numeric($value))
+                    ? (int) $value
+                    : null;
+                // Validasi eksistensi manual (string kosong = lepas kaitan).
+                if ($invoice->sales_order_id !== null
+                    && !\Illuminate\Support\Facades\DB::table('sales_orders')
+                        ->where('id', $invoice->sales_order_id)
+                        ->whereNull('deleted_at')
+                        ->exists()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Sales order tidak ditemukan.',
+                    ], 422);
+                }
+            }
+
             $invoice->total_price = $totalPrice + ($invoice->taxes ?? 0) - ($invoice->discounts ?? 0);
             $invoice->save();
 
@@ -697,7 +717,7 @@ class ProcurementController extends Controller
                 'success' => true,
                 'message' => 'Invoice berhasil diperbarui.',
                 'data' => $invoice->load([
-                    'store', 'supplier', 'createdBy',
+                    'store', 'supplier', 'createdBy', 'salesOrder',
                     'detailInvoices.detailRequest.product.unit',
                     'detailInvoices.detailRequest.paymentType',
                 ]),
@@ -1636,6 +1656,7 @@ class ProcurementController extends Controller
             'discounts' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
             'image' => 'nullable|string',
+            'sales_order_id' => 'nullable|integer|exists:sales_orders,id',
         ]);
 
         $invoice = DB::transaction(function () use ($request, $user) {
@@ -1660,6 +1681,7 @@ class ProcurementController extends Controller
                 'created_by_id' => $user->id,
                 'payment_status' => '1',
                 'order_status' => '1',
+                'sales_order_id' => $request->sales_order_id,
             ]);
 
             foreach ($request->items as $item) {
