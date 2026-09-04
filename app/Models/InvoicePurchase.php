@@ -22,6 +22,7 @@ class InvoicePurchase extends Model
         'notes',
         'created_by_id',
         'payment_status',
+        'sales_order_id',
         'order_status',
     ];
 
@@ -65,6 +66,11 @@ class InvoicePurchase extends Model
     public function supplier()
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    public function salesOrder()
+    {
+        return $this->belongsTo(\App\Models\SalesOrder::class);
     }
 
     public function paymentReceipts()
