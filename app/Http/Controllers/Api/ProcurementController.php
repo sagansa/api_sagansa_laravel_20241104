@@ -774,9 +774,17 @@ class ProcurementController extends Controller
         // invoice agar tidak bisa menunjuk path storage arbitrer (mis.
         // 'images/Delivery/evil.webp').
         if (!str_starts_with($newPath, 'images/InvoicePurchase/')) {
+            // Nilai yang ditolak dicatat & ditampilkan agar penyimpangan format
+            // path dari img service langsung terlihat saat insiden (mis. build
+            // img lama yang mengembalikan path tanpa directory).
+            \Illuminate\Support\Facades\Log::warning('updateInvoiceImage: path image ditolak.', [
+                'invoice_id' => $invoice->id,
+                'user_id' => $user->id,
+                'received' => $newPath,
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Path image tidak valid.',
+                'message' => 'Path image tidak valid. Diterima: ' . \Illuminate\Support\Str::limit($newPath, 80, ''),
             ], 422);
         }
 
