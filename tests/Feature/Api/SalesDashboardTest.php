@@ -254,7 +254,10 @@ class SalesDashboardTest extends TestCase
         $this->assertNotNull($item);
         $this->assertEquals(5, $item['qty']);
         $this->assertEquals(5000, $item['revenue']);
+        $this->assertArrayHasKey('qty_prev', $item);
+        $this->assertArrayHasKey('revenue_prev', $item);
         $this->assertNotNull($item['product_name']);
+        $this->assertNotNull($res->json('data.meta.prev_label'));
     }
 
     public function test_products_view_paginates(): void

@@ -67,7 +67,7 @@ class SalesDashboardController extends Controller
                 'success' => true,
                 'data'    => array_merge(
                     ['view' => 'products', 'periode' => $periode, 'sort' => $sort],
-                    $this->productsView($range, $page, $perPage, $sort),
+                    $this->productsView($range, $page, $perPage, $sort, $periode, $compareYear),
                 ),
             ]),
             'channels' => response()->json([
@@ -373,7 +373,7 @@ class SalesDashboardController extends Controller
         return [$prevRange, $prevBuckets];
     }
 
-    private function productsView(array $range, int $page, int $perPage, string $sort): array
+    private function productsView(array $range, int $page, int $perPage, string $sort, string $periode = 'today', ?int $compareYear = null): array
     {
         $baseQuery = $this->deliveredSalesOrders($range)
             ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
@@ -397,6 +397,14 @@ class SalesDashboardController extends Controller
         $offset = ($page - 1) * $perPage;
         $rows = (clone $baseQuery)->skip($offset)->take($perPage)->get();
 
+        // Tentukan rentang pembanding (YoY untuk year / natural untuk periode lainnya).
+        if ($compareYear !== null && $periode === 'year') {
+            [$prevRange] = $this->resolvePrevRangeAndBuckets($range, $periode, $compareYear);
+            $prevLabel = (string) $compareYear;
+        } else {
+            [$prevRange, $prevLabel] = $this->resolvePrevRangeNatural($range['from'], $range['to']);
+        }
+
         $items = $rows;
         if ($rows->isNotEmpty()) {
             $products = DB::table('products')
@@ -406,14 +414,29 @@ class SalesDashboardController extends Controller
                 ->get()
                 ->keyBy('id');
 
-            $items = $rows->map(function ($r) use ($products) {
+            $prevRows = $this->deliveredSalesOrders($prevRange)
+                ->join('detail_sales_orders as dso', 'dso.sales_order_id', '=', 'so.id')
+                ->whereIn('dso.product_id', $rows->pluck('product_id'))
+                ->select(
+                    'dso.product_id',
+                    DB::raw('SUM(dso.quantity) as qty'),
+                    DB::raw('SUM(dso.subtotal_price) as revenue')
+                )
+                ->groupBy('dso.product_id')
+                ->get()
+                ->keyBy('product_id');
+
+            $items = $rows->map(function ($r) use ($products, $prevRows) {
                 $p = $products->get($r->product_id);
+                $prev = $prevRows->get($r->product_id);
                 return [
                     'product_id'   => (int) $r->product_id,
                     'product_name' => $p?->name,
                     'unit'         => $p?->unit,
                     'qty'          => (int) $r->qty,
                     'revenue'      => (int) $r->revenue,
+                    'qty_prev'     => (int) ($prev?->qty ?? 0),
+                    'revenue_prev' => (int) ($prev?->revenue ?? 0),
                 ];
             })->values();
         }
@@ -425,6 +448,7 @@ class SalesDashboardController extends Controller
                 'last_page'    => $lastPage,
                 'per_page'     => $perPage,
                 'total'        => $total,
+                'prev_label'   => $prevLabel,
             ],
         ];
     }
