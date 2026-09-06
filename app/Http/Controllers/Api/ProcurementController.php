@@ -757,8 +757,10 @@ class ProcurementController extends Controller
     }
 
     /**
-     * Ganti image invoice SAJA — admin/super_admin/staff, semua payment_status.
+     * Ganti image invoice SAJA — admin/super_admin/staff.
      * Skenario: bayar dulu, invoice (foto) final dari supplier keluar belakangan.
+     * TERKECUALI invoice yang sudah final: payment_status '2' (dibayar) DAN
+     * order_status '2' (diterima) → foto dikunci (422).
      * Tidak menyentuh payment_status / field lain.
      */
     public function updateInvoiceImage($id, Request $request)
@@ -780,6 +782,17 @@ class ProcurementController extends Controller
                 'success' => false,
                 'message' => 'Invoice tidak ditemukan.',
             ], 404);
+        }
+
+        // Foto dikunci ketika invoice sudah final: SUDAH DIBAYAR
+        // (payment_status '2') DAN SUDAH DITERIMA (order_status '2').
+        // Kondisi lain (mis. dibayar tapi barang belum diterima) tetap
+        // boleh diganti — skenario invoice final keluar belakangan.
+        if ($invoice->payment_status == '2' && $invoice->order_status == '2') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Foto invoice tidak dapat diganti karena invoice sudah dibayar dan diterima.',
+            ], 422);
         }
 
         $request->validate([

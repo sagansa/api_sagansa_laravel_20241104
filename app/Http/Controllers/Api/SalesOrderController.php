@@ -623,15 +623,6 @@ class SalesOrderController extends Controller
             ], 422);
         }
 
-        // Validasi receipt_no unik
-        $exists = SalesOrderOnline::where('receipt_no', $request->receipt_no)->exists();
-        if ($exists) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Nomor resi sudah digunakan pada order lain.',
-            ], 422);
-        }
-
         // Hitung subtotal & total
         $items = [];
         $totalPrice = 0;
