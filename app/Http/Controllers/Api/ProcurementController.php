@@ -616,7 +616,25 @@ class ProcurementController extends Controller
 
         $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin');
         $isStaff = $user->hasRole('staff');
-        if (!$isAdmin && !$isStaff && $invoice->created_by_id != $user->id) {
+        $isStorageStaff = $user->hasRole('storage-staff');
+
+        // Kaitan Penjualan Terkait (sales_order_id) hanya untuk storage-staff
+        // dan admin — termasuk menolak staf/pembuat invoice sendiri.
+        if ($request->has('sales_order_id') && !$isAdmin && !$isStorageStaff) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya storage-staff dan admin yang dapat mengubah kaitan penjualan.',
+            ], 403);
+        }
+
+        // Link/unlink murni (tanpa field edit lain) bukan edit penuh: pemanggil
+        // storage-staff tetap boleh meski bukan staf/pembuat invoice.
+        $onlySalesLink = $request->has('sales_order_id') &&
+            !$request->hasAny(['supplier_id', 'payment_type_id', 'taxes',
+                'discounts', 'notes', 'image', 'items']);
+
+        if (!$isAdmin && !$isStaff && !$isStorageStaff && !$onlySalesLink &&
+            $invoice->created_by_id != $user->id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Anda tidak memiliki akses untuk mengedit invoice ini.'
@@ -768,7 +786,10 @@ class ProcurementController extends Controller
             'image' => 'required|string',
         ]);
 
-        $newPath = trim((string) $request->input('image'));
+        // Img service men-escape '/' menjadi '\/' di body JSON (default
+        // json_encode PHP); build app lama mengekstraknya via regex sehingga
+        // backslash ikut terkirim ke sini. Normalkan sebelum divalidasi.
+        $newPath = str_replace('\\/', '/', trim((string) $request->input('image')));
 
         // Endpoint ini menghapus file lama — path baru wajib berada di folder
         // invoice agar tidak bisa menunjuk path storage arbitrer (mis.
@@ -788,7 +809,11 @@ class ProcurementController extends Controller
             ], 422);
         }
 
-        $oldPath = $invoice->image;
+        // Baris lama di DB bisa tersimpan ter-escape juga (upload via build
+        // app lama) — normalkan agar penghapusan file lama mengenai path benar.
+        $oldPath = $invoice->image
+            ? str_replace('\\/', '/', $invoice->image)
+            : null;
 
         if ($oldPath && $oldPath !== $newPath) {
             try {

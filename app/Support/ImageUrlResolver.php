@@ -24,6 +24,10 @@ class ImageUrlResolver
 
         $path = trim($path);
 
+        // Normalkan escape JSON ('\/') yang tersimpan di DB dari build app
+        // lama, agar URL gambar tetap valid.
+        $path = str_replace('\\/', '/', $path);
+
         if (filter_var($path, FILTER_VALIDATE_URL)) {
             return $path;
         }
