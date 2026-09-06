@@ -180,6 +180,26 @@ class SalesDashboardController extends Controller
             ];
         }
 
+        // Kasus 4: tahun berjalan → tahun lalu paralel (1 Jan s/d tgl/bulan sama).
+        // Dicek SEBELUM kasus bulan: 1 Jan juga awal bulan, sehingga tanpa
+        // pembeda rentang, range "tahun berjalan" selalu tertangkap cabang
+        // bulan dan pembanding KPI salah menunjuk bulan lalu. Pembeda: range
+        // tahun lintas bulan (1 Jan s/d hari ini tidak mungkin satu bulan).
+        $isYearRange = $from->isSameDay($from->copy()->startOfYear()->startOfDay())
+            && $to->isSameDay($now)
+            && !$from->isSameMonth($to);
+        if ($isYearRange) {
+            $prevYear = $to->copy()->subYear();
+            return [
+                [
+                    'from'  => $prevYear->copy()->startOfYear()->startOfDay()->toDateTimeString(),
+                    'to'    => $prevYear->copy()->endOfDay()->toDateTimeString(),
+                    'label' => $prevYear->format('Y'),
+                ],
+                $prevYear->format('Y') . ' (s/d ' . $prevYear->format('d M') . ')',
+            ];
+        }
+
         // Kasus 3: bulan berjalan → bulan lalu paralel (tgl 1..N bulan lalu).
         $isMonthRange = $from->isSameDay($from->copy()->startOfMonth()->startOfDay())
             && $to->isSameDay($now);
@@ -195,21 +215,6 @@ class SalesDashboardController extends Controller
                     'label' => $prevMonth->format('M Y'),
                 ],
                 $prevMonth->format('M Y') . ' (s/d tgl ' . $effectiveDay . ')',
-            ];
-        }
-
-        // Kasus 4: tahun berjalan → tahun lalu paralel (1 Jan s/d tgl/bulan sama).
-        $isYearRange = $from->isSameDay($from->copy()->startOfYear()->startOfDay())
-            && $to->isSameDay($now);
-        if ($isYearRange) {
-            $prevYear = $to->copy()->subYear();
-            return [
-                [
-                    'from'  => $prevYear->copy()->startOfYear()->startOfDay()->toDateTimeString(),
-                    'to'    => $prevYear->copy()->endOfDay()->toDateTimeString(),
-                    'label' => $prevYear->format('Y'),
-                ],
-                $prevYear->format('Y') . ' (s/d ' . $prevYear->format('d M') . ')',
             ];
         }
 
