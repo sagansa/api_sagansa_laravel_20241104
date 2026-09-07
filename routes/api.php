@@ -112,7 +112,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Sales Order Delivery Routes
     Route::get('/sales-orders/search', [\App\Http\Controllers\Api\SalesOrderController::class, 'search']);
-    // Kandidat penjualan utk dikaitkan ke invoice pembelian (admin/staff).
+    // Kandidat penjualan utk dikaitkan ke invoice pembelian (admin/storage-staff).
     Route::get('/sales-orders/link-candidates', [\App\Http\Controllers\Api\SalesOrderController::class, 'linkCandidates']);
     Route::post('/sales-orders/ready-to-ship', [\App\Http\Controllers\Api\SalesOrderController::class, 'markReadyToShip']);
     Route::post('/sales-orders/delivery-update', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateDelivery']);
@@ -121,6 +121,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/sales-orders/{id}/items', [\App\Http\Controllers\Api\SalesOrderController::class, 'updateItems']);
     // Tetapkan toko &/atau status bayar order direct (admin only; role guard di controller).
     Route::post('/sales-orders/{id}/assign', [\App\Http\Controllers\Api\SalesOrderController::class, 'assign']);
+    // Invoice pembelian terkait satu order (kartu di detail penjualan direct).
+    Route::get('/sales-orders/{id}/purchase-invoices', [\App\Http\Controllers\Api\SalesOrderController::class, 'purchaseInvoices']);
 
     // Sales Order Online - Create (admin)
     Route::get('/sales-orders/online-shop-providers', [\App\Http\Controllers\Api\SalesOrderController::class, 'onlineShopProviders']);

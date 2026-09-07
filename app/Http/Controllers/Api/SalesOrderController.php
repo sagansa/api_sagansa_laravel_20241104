@@ -912,4 +912,51 @@ class SalesOrderController extends Controller
             }),
         ]);
     }
+
+    /**
+     * Invoice pembelian yang terkait ke satu sales order (kaitan
+     * invoice_purchases.sales_order_id). Untuk kartu "Invoice Pembelian
+     * Terkait" di detail penjualan direct — guard sama dengan perubahan
+     * kaitan: admin/super_admin + storage-staff.
+     */
+    public function purchaseInvoices(int $id, Request $request)
+    {
+        $user = $request->user();
+        $allowed = $user
+            && ($user->hasRole('admin') || $user->hasRole('super_admin')
+                || $user->hasRole('storage-staff'));
+        if (!$allowed) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya admin dan storage-staff yang dapat melihat invoice terkait.',
+            ], 403);
+        }
+
+        $order = \App\Models\SalesOrder::find($id);
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order tidak ditemukan.',
+            ], 404);
+        }
+
+        $rows = \App\Models\InvoicePurchase::query()
+            ->leftJoin('suppliers', 'suppliers.id', '=', 'invoice_purchases.supplier_id')
+            ->where('invoice_purchases.sales_order_id', $id)
+            ->select(
+                'invoice_purchases.id',
+                'invoice_purchases.total_price',
+                'invoice_purchases.payment_status',
+                'invoice_purchases.order_status',
+                'invoice_purchases.date',
+                'suppliers.name as supplier_name'
+            )
+            ->orderByDesc('invoice_purchases.id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+        ]);
+    }
 }
