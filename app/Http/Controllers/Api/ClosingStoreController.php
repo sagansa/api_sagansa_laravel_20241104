@@ -506,6 +506,17 @@ class ClosingStoreController extends Controller
             'image' => 'required|string',
         ]);
 
+        // Blacklist gating: tolak supplier yang diblacklist
+        if ($request->filled('supplier_id')) {
+            $supplier = Supplier::find($request->input('supplier_id'));
+            if ($supplier && $supplier->status == 3) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Supplier Blacklist tidak dapat dipakai.'
+                ], 422);
+            }
+        }
+
         $closingStoreId = $request->input('closing_store_id');
         $storeId = null;
         
@@ -581,7 +592,7 @@ class ClosingStoreController extends Controller
      */
     public function suppliers()
     {
-        $suppliers = Supplier::where('status', 1)->get();
+        $suppliers = Supplier::where('status', '<>', 3)->get();
         return response()->json([
             'success' => true,
             'data' => $suppliers

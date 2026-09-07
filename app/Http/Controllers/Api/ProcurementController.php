@@ -12,6 +12,7 @@ use App\Models\Asset;
 use App\Models\PaymentReceipt;
 use App\Models\DailySalary;
 use App\Models\FuelService;
+use App\Models\Supplier;
 use App\Services\ProcurementNotificationService;
 use App\Services\QrisService;
 use Illuminate\Http\Request;
@@ -288,7 +289,7 @@ class ProcurementController extends Controller
     public function invoices(Request $request)
     {
         $query = InvoicePurchase::with([
-            'store', 'supplier', 'detailInvoices', 'createdBy'
+            'store', 'supplier', 'detailInvoices', 'createdBy', 'closingStores:id,date'
         ]);
 
         // Staff/supervisor only see invoices they created
@@ -390,7 +391,7 @@ class ProcurementController extends Controller
             'store', 'supplier.bank', 'createdBy',
             'detailInvoices.detailRequest.product.unit',
             'detailInvoices.detailRequest.paymentType',
-            'salesOrder', 'salesOrder.store',
+            'salesOrder', 'salesOrder.store', 'closingStores:id,date',
         ])->find($id);
 
         if (!$invoice) {
@@ -483,6 +484,15 @@ class ProcurementController extends Controller
             'discounts' => 'nullable|numeric|min:0',
             'image' => 'nullable|string',
         ]);
+
+        // Blacklist gating: tolak supplier yang diblacklist
+        $supplier = Supplier::find($request->supplier_id);
+        if ($supplier && $supplier->status == 3) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Supplier Blacklist tidak dapat dipakai.'
+            ], 422);
+        }
 
         // Frontend mengirim subtotal_invoice (source of truth) atau price
         // (backward compat). Minimal salah satu wajib ada per item.
@@ -709,6 +719,17 @@ class ProcurementController extends Controller
             'items.*.quantity' => 'required_with:items|numeric|min:1',
             'sales_order_id' => 'nullable',
         ]);
+
+        // Blacklist gating: tolak supplier yang diblacklist
+        if ($request->filled('supplier_id')) {
+            $supplier = Supplier::find($request->supplier_id);
+            if ($supplier && $supplier->status == 3) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Supplier Blacklist tidak dapat dipakai.'
+                ], 422);
+            }
+        }
 
         // Minimal salah satu dari price / subtotal_invoice wajib ada per item.
         if ($request->has('items')) {

@@ -84,6 +84,15 @@ class SupplierController extends Controller
      */
     public function store(Request $request)
     {
+        // Only supervisor, admin, or super_admin can create suppliers
+        $user = $request->user();
+        if (!$user->hasAnyRole(['supervisor', 'admin', 'super_admin'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk membuat supplier.'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'no_telp' => 'nullable|string|max:20',
@@ -170,16 +179,45 @@ class SupplierController extends Controller
         }
 
         $data = $request->except(['image', 'user_id']);
-        
+
+        $user = $request->user();
+        $isStaff = !$user->hasAnyRole(['supervisor', 'admin', 'super_admin']);
+
+        // Staff can only update image — strip all other fields
+        if ($isStaff) {
+            $data = [];
+            if ($request->filled('image')) {
+                $data['image'] = $request->input('image');
+            }
+            $supplier->update($data);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Foto supplier berhasil diperbarui.',
+                'data' => $supplier->load(['province', 'city', 'district', 'subdistrict', 'postalCode', 'bank', 'user'])
+            ]);
+        }
+
         // Capital case formatting for name
         if ($request->has('name')) {
             $data['name'] = ucwords(strtolower($request->name));
         }
 
-        // Only Admin can update status
+        // Only admin or super_admin can update status
         if ($request->has('status')) {
-            if (!$request->user()->hasRole('admin')) {
-                unset($data['status']); // Staff cannot change status
+            if (!$user->hasAnyRole(['admin', 'super_admin'])) {
+                unset($data['status']);
+            }
+        }
+
+        // Foto wajib untuk status Valid (2)
+        if (($data['status'] ?? $supplier->status) == 2) {
+            $hasPhoto = $supplier->image || $request->filled('image');
+            if (!$hasPhoto) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Supplier belum punya foto, tidak dapat diverifikasi sebagai Valid.'
+                ], 422);
             }
         }
 
