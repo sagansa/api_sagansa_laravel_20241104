@@ -103,4 +103,80 @@ class PurchaseInvoiceSalesLinkTest extends TestCase
             \Illuminate\Support\Facades\DB::table('sales_orders')->where('id', $orderId)->delete();
         }
     }
+
+    public function test_invoice_link_candidates_forbidden_for_staff(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+
+        $this->getJson('/procurement/invoices/link-candidates')
+            ->assertStatus(403);
+    }
+
+    public function test_invoice_link_candidates_only_draft_and_unlinked(): void
+    {
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
+        $orderId = $this->makeSalesOrder();
+
+        try {
+            $draftUnlinked = $this->makeInvoice();
+            $linked = $this->makeInvoice(['sales_order_id' => $orderId]);
+            $this->makeInvoice(['payment_status' => '2']); // unlinked tapi dibayar
+
+            $res = $this->getJson('/procurement/invoices/link-candidates');
+
+            $res->assertOk();
+            $ids = array_column($res->json('data'), 'id');
+            $this->assertContains($draftUnlinked->id, $ids);
+            $this->assertNotContains($linked->id, $ids);
+            foreach ($res->json('data') as $row) {
+                $this->assertSame('1', (string) $row['payment_status']);
+            }
+        } finally {
+            \App\Models\InvoicePurchase::whereIn('id', [
+                $draftUnlinked->id ?? 0, $linked->id ?? 0,
+            ])->orWhere('sales_order_id', $orderId)->delete();
+            \Illuminate\Support\Facades\DB::table('sales_orders')->where('id', $orderId)->delete();
+        }
+    }
+
+    public function test_invoice_link_candidates_search_by_supplier_name(): void
+    {
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
+        $db = \Illuminate\Support\Facades\DB::table('suppliers');
+        $supplierId = $db->insertGetId([
+            'name' => 'PT Kandidat Unik Zzz',
+            'status' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        try {
+            $invoice = $this->makeInvoice(['supplier_id' => $supplierId]);
+
+            $res = $this->getJson('/procurement/invoices/link-candidates?q=' . urlencode('Kandidat Unik'));
+
+            $res->assertOk();
+            $ids = array_column($res->json('data'), 'id');
+            $this->assertContains($invoice->id, $ids);
+        } finally {
+            \App\Models\InvoicePurchase::where('supplier_id', $supplierId)->delete();
+            $db->where('id', $supplierId)->delete();
+        }
+    }
+
+    public function test_invoice_link_candidates_search_by_id(): void
+    {
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
+        $invoice = $this->makeInvoice();
+
+        try {
+            $res = $this->getJson("/procurement/invoices/link-candidates?q={$invoice->id}");
+
+            $res->assertOk();
+            $ids = array_column($res->json('data'), 'id');
+            $this->assertContains($invoice->id, $ids);
+        } finally {
+            $invoice->delete();
+        }
+    }
 }

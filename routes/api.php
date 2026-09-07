@@ -193,6 +193,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/detail-requests', [\App\Http\Controllers\Api\ProcurementController::class, 'detailRequests']);
         Route::post('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'storeInvoice']);
         Route::get('/invoices', [\App\Http\Controllers\Api\ProcurementController::class, 'invoices']);
+        // Kandidat invoice utk dikaitkan dari sisi penjualan (admin/storage-staff).
+        // WAJIB sebelum route /invoices/{id} agar tidak tertangkap wildcard.
+        Route::get('/invoices/link-candidates', [\App\Http\Controllers\Api\ProcurementController::class, 'invoiceLinkCandidates']);
         Route::get('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'showInvoice']);
         Route::get('/invoices/{id}/qris', [\App\Http\Controllers\Api\ProcurementController::class, 'invoiceQris']);
         Route::put('/invoices/{id}', [\App\Http\Controllers\Api\ProcurementController::class, 'updateInvoice']);

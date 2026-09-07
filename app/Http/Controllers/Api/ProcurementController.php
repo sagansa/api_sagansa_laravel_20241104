@@ -328,6 +328,60 @@ class ProcurementController extends Controller
     }
 
     /**
+     * Kandidat invoice pembelian untuk dikaitkan dari sisi penjualan
+     * (kartu di detail penjualan direct): hanya invoice DRAFT dan BELUM
+     * terkait order lain. Guard sama dengan perubahan kaitan:
+     * admin/super_admin + storage-staff.
+     */
+    public function invoiceLinkCandidates(Request $request)
+    {
+        $user = $request->user();
+        $allowed = $user
+            && ($user->hasRole('admin') || $user->hasRole('super_admin')
+                || $user->hasRole('storage-staff'));
+        if (!$allowed) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya admin dan storage-staff yang dapat mencari invoice pembelian.',
+            ], 403);
+        }
+
+        $q = trim((string) $request->query('q', ''));
+
+        $query = InvoicePurchase::query()
+            ->leftJoin('suppliers', 'suppliers.id', '=', 'invoice_purchases.supplier_id')
+            ->where('invoice_purchases.payment_status', '1')
+            ->whereNull('invoice_purchases.sales_order_id')
+            ->select(
+                'invoice_purchases.id',
+                'invoice_purchases.total_price',
+                'invoice_purchases.payment_status',
+                'invoice_purchases.order_status',
+                'invoice_purchases.date',
+                'suppliers.name as supplier_name'
+            );
+
+        if ($q !== '') {
+            $query->where(function ($sub) use ($q) {
+                if (is_numeric($q)) {
+                    $sub->where('invoice_purchases.id', (int) $q);
+                }
+                $sub->orWhere('suppliers.name', 'like', "%{$q}%");
+            });
+            $limit = 10;
+        } else {
+            $limit = 20;
+        }
+
+        $rows = $query->orderByDesc('invoice_purchases.id')->limit($limit)->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+        ]);
+    }
+
+    /**
      * Get detail of a specific invoice purchase.
      */
     public function showInvoice($id, Request $request)
