@@ -157,6 +157,7 @@ class SupplierController extends Controller
             'postal_code_id' => 'sometimes|required',
             'address' => 'sometimes|required|string',
             'image' => 'nullable|string',
+            'qris' => 'nullable|string',
             'status' => 'sometimes|integer|in:1,2,3',
         ]);
 
@@ -315,6 +316,60 @@ class SupplierController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'QRIS payload tidak valid.',
+            ], 400);
+        }
+
+        if (!$qrisService->validatePayload($request->qris)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'CRC QRIS tidak valid.',
+            ], 400);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'merchant_name' => $parsed['merchant_name'],
+                'merchant_city' => $parsed['merchant_city'],
+                'merchant_nmid' => $qrisService->getMerchantNmid($parsed),
+                'point_of_initiation_label' => $parsed['point_of_initiation_label'],
+                'currency' => $parsed['currency'],
+            ],
+        ]);
+    }
+
+    /**
+     * Validate a QRIS payload without a supplier id (create-mode).
+     * Response shape identik dengan validateQris().
+     */
+    public function validateQrisPayload(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'qris' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal.',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $qrisService = app(QrisService::class);
+        $parsed = $qrisService->parsePayload($request->qris);
+
+        if (!$parsed['valid']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'QRIS payload tidak valid.',
+            ], 400);
+        }
+
+        if (!$qrisService->validatePayload($request->qris)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'CRC QRIS tidak valid.',
             ], 400);
         }
 

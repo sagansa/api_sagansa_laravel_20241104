@@ -90,49 +90,57 @@ class QrisService
      */
     public function generateDynamicPayload(string $staticPayload, int $amount): string
     {
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('QRIS amount must be greater than zero.');
+        }
+
         $tags = $this->parseTags($staticPayload);
         if (empty($tags)) {
             throw new \InvalidArgumentException('QRIS payload tidak valid');
         }
 
-        $amountFormatted = number_format($amount, 2, '.', '');
-        $amountTag = '54' . str_pad(strlen($amountFormatted), 2, '0', STR_PAD_LEFT) . $amountFormatted;
+        $amountFormatted = rtrim(rtrim(number_format($amount, 2, '.', ''), '0'), '.');
+        $amountTag = '54' . str_pad((string) strlen($amountFormatted), 2, '0', STR_PAD_LEFT) . $amountFormatted;
 
-        $hasAmount = false;
-        $newTags = [];
-        $inserted = false;
+        $result = '';
+        $amountWritten = false;
 
         foreach ($tags as $tag) {
-            if ($tag['id'] === '54') {
-                $newTags[] = $amountTag;
-                $hasAmount = true;
-                continue;
-            }
-
             if ($tag['id'] === '63') {
                 continue;
             }
 
-            if (!$inserted && !$hasAmount && $tag['id'] >= '55') {
-                $newTags[] = $amountTag;
-                $inserted = true;
+            if ($tag['id'] === '01') {
+                $result .= '01' . '02' . '12';
+                continue;
             }
 
-            $newTags[] = $tag['id'] . str_pad($tag['length'], 2, '0', STR_PAD_LEFT) . $tag['value'];
+            if ($tag['id'] === '54') {
+                $result .= $amountTag;
+                $amountWritten = true;
+                continue;
+            }
+
+            if (!$amountWritten && strcmp($tag['id'], '54') > 0) {
+                $result .= $amountTag;
+                $amountWritten = true;
+            }
+
+            $result .= $tag['id'] . str_pad((string) $tag['length'], 2, '0', STR_PAD_LEFT) . $tag['value'];
         }
 
-        if (!$hasAmount && !$inserted) {
-            $newTags[] = $amountTag;
+        if (!$amountWritten) {
+            $result .= $amountTag;
         }
 
-        $payloadWithoutCrc = implode('', $newTags);
-        $crc = $this->calculateCrc16($payloadWithoutCrc);
+        $payloadForCrc = $result . '6304';
+        $crc = $this->calculateCrc16($payloadForCrc);
 
-        return $payloadWithoutCrc . '63' . str_pad($crc, 4, '0', STR_PAD_LEFT);
+        return $payloadForCrc . strtoupper(str_pad($crc, 4, '0', STR_PAD_LEFT));
     }
 
     /**
-     * Calculate CRC-16 for QRIS (ISO/IEC 13239).
+     * Calculate CRC-16/CCITT-FALSE for QRIS (poly 0x1021, MSB-first).
      */
     public function calculateCrc16(string $payload): string
     {
@@ -140,17 +148,18 @@ class QrisService
         $len = strlen($payload);
 
         for ($i = 0; $i < $len; $i++) {
-            $crc ^= ord($payload[$i]);
+            $crc ^= ord($payload[$i]) << 8;
+
             for ($j = 0; $j < 8; $j++) {
-                if ($crc & 0x0001) {
-                    $crc = ($crc >> 1) ^ 0x8408;
+                if ($crc & 0x8000) {
+                    $crc = (($crc << 1) ^ 0x1021) & 0xFFFF;
                 } else {
-                    $crc = $crc >> 1;
+                    $crc = ($crc << 1) & 0xFFFF;
                 }
             }
         }
 
-        return strtoupper(dechex($crc));
+        return strtoupper(str_pad(dechex($crc & 0xFFFF), 4, '0', STR_PAD_LEFT));
     }
 
     /**

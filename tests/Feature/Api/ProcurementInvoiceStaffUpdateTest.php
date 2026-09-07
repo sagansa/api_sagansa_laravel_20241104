@@ -226,11 +226,54 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
         $this->getJson('/sales-orders/link-candidates?q=x')->assertStatus(403);
     }
 
-    public function test_link_candidates_requires_q(): void
+    public function test_link_candidates_lists_recent_online_shop_orders(): void
     {
         Sanctum::actingAs($this->userWithRole('staff'));
 
-        $this->getJson('/sales-orders/link-candidates')->assertStatus(422);
+        $db = \Illuminate\Support\Facades\DB::table('sales_orders');
+        $recentId = $db->insertGetId([
+            'for' => 1,
+            'delivery_date' => now()->toDateString(),
+            'payment_status' => 1,
+            'delivery_status' => 1,
+            'total_price' => 12345,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $oldId = $db->insertGetId([
+            'for' => 1,
+            'delivery_date' => now()->toDateString(),
+            'payment_status' => 1,
+            'delivery_status' => 1,
+            'total_price' => 999,
+            'created_at' => now()->subDays(6),
+            'updated_at' => now(),
+        ]);
+
+        try {
+            $res = $this->getJson('/sales-orders/link-candidates');
+
+            $res->assertOk()->assertJson(['success' => true]);
+            $rows = $res->json('data');
+            $ids = array_column($rows, 'id');
+            // Order yang dibuat dalam 5 hari terakhir masuk list;
+            // yang lebih tua tidak.
+            $this->assertContains($recentId, $ids);
+            $this->assertNotContains($oldId, $ids);
+            // Mode daftar (tanpa q) hanya menampilkan order toko online (for=1).
+            foreach ($rows as $row) {
+                $this->assertSame(1, $row['for']);
+            }
+        } finally {
+            $db->whereIn('id', [$recentId, $oldId])->delete();
+        }
+    }
+
+    public function test_link_candidates_list_forbidden_for_sales_role(): void
+    {
+        Sanctum::actingAs($this->userWithRole('sales'));
+
+        $this->getJson('/sales-orders/link-candidates')->assertStatus(403);
     }
 
     public function test_staff_can_replace_image_on_paid_invoice(): void

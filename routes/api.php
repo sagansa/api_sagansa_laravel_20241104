@@ -338,6 +338,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('suppliers')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\SupplierController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\SupplierController::class, 'store']);
+        Route::post('/validate-qris', [\App\Http\Controllers\Api\SupplierController::class, 'validateQrisPayload']);
         Route::get('/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'show']);
         Route::post('/{id}', [\App\Http\Controllers\Api\SupplierController::class, 'update']);
         Route::post('/{id}/validate-qris', [\App\Http\Controllers\Api\SupplierController::class, 'validateQris']);

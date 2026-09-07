@@ -951,11 +951,19 @@ class ProcurementController extends Controller
             ], 400);
         }
 
+        $receiptAmount = $receipt->transfer_amount ?? $receipt->total_amount ?? 0;
+        if (empty($receiptAmount) || $receiptAmount <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nominal payment receipt kosong. QRIS dinamis butuh transfer_amount/total_amount lebih dari nol.'
+            ], 400);
+        }
+
         try {
             $qrisService = app(QrisService::class);
             $dynamicPayload = $qrisService->generateDynamicPayload(
                 $receipt->supplier->qris,
-                $receipt->transfer_amount ?? $receipt->total_amount ?? 0
+                $receiptAmount
             );
 
             $parsed = $qrisService->parsePayload($receipt->supplier->qris);
@@ -1006,11 +1014,19 @@ class ProcurementController extends Controller
             ], 400);
         }
 
+        $invoiceAmount = $invoice->total_price ?? 0;
+        if (empty($invoiceAmount) || $invoiceAmount <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nominal invoice kosong. QRIS dinamis butuh total_price lebih dari nol.'
+            ], 400);
+        }
+
         try {
             $qrisService = app(QrisService::class);
             $dynamicPayload = $qrisService->generateDynamicPayload(
                 $invoice->supplier->qris,
-                $invoice->total_price ?? 0
+                $invoiceAmount
             );
 
             $parsed = $qrisService->parsePayload($invoice->supplier->qris);

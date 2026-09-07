@@ -830,7 +830,13 @@ class SalesOrderController extends Controller
 
     /**
      * Kandidat penjualan untuk dikaitkan ke invoice pembelian (staff/admin).
-     * q: receipt_no LIKE ATAU id persis (order direct tidak punya resi).
+     *
+     * Dua mode:
+     * - q terisi  : pencarian receipt_no LIKE atau id persis (perilaku lama).
+     * - q kosong  : daftar order toko online (for=1, tidak punya resi) yang
+     *               dibuat dalam `days` hari terakhir (default 5), terbaru
+     *               dulu — dipilih dari list tanpa mengetik nomor resi.
+     *               `for` dan `days` bisa di-override lewat query param.
      */
     public function linkCandidates(Request $request)
     {
@@ -846,28 +852,39 @@ class SalesOrderController extends Controller
         }
 
         $q = trim((string) $request->query('q', ''));
-        if ($q === '') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Parameter q wajib diisi.',
-            ], 422);
-        }
-
         $for = $request->query('for');
-        $rows = $this->orderRowQuery()
+
+        $query = $this->orderRowQuery()
             // orderRowQuery() belum memilih kolom `for` — tambahkan di sini
             // supaya respons memuat tipe order tanpa mengubah query bersama.
             ->addSelect('sales_orders.for')
             ->whereNull('sales_orders.deleted_at')
+            // Filter tipe opsional di kedua mode (perilaku lama saat q terisi).
             ->when($for !== null && $for !== '', function ($query) use ($for) {
                 $query->where('sales_orders.for', $for);
-            })
-            ->where(function ($query) use ($q) {
+            });
+
+        if ($q !== '') {
+            $query->where(function ($query) use ($q) {
                 $query->where('sales_orders.receipt_no', 'like', "%{$q}%")
                     ->orWhere('sales_orders.id', $q);
-            })
+            });
+
+            $limit = 10;
+        } else {
+            // Mode daftar: default order toko online (for=1) — tipe yang
+            // tidak punya nomor resi sehingga tidak bisa dicari lewat q.
+            $days = min(max((int) $request->query('days', 5), 1), 30);
+            $query
+                ->where('sales_orders.for', 1)
+                ->where('sales_orders.created_at', '>=', now()->subDays($days));
+
+            $limit = 50;
+        }
+
+        $rows = $query
             ->orderByDesc('sales_orders.id')
-            ->limit(10)
+            ->limit($limit)
             ->get();
 
         return response()->json([
@@ -880,6 +897,17 @@ class SalesOrderController extends Controller
                     'store_name' => $row->store_name,
                     'delivery_date' => $row->delivery_date,
                     'total_price' => $row->total_price,
+                    // Identitas pembeli supaya staf bisa memilih order yang
+                    // tepat dari list tanpa nomor resi (order toko online
+                    // tidak punya resi).
+                    'buyer_name' => $row->address_recipient_name
+                        ?: ($row->ordered_by_name ?? null),
+                    'buyer_phone' => $row->address_recipient_telp_no,
+                    'buyer_address' => collect([
+                        $row->address_detail,
+                        $row->address_district,
+                        $row->address_city,
+                    ])->filter()->implode(', '),
                 ];
             }),
         ]);
