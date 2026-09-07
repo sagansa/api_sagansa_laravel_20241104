@@ -843,11 +843,11 @@ class SalesOrderController extends Controller
         $user = $request->user();
         $allowed = $user
             && ($user->hasRole('admin') || $user->hasRole('super_admin')
-                || $user->hasRole('staff'));
+                || $user->hasRole('storage-staff'));
         if (!$allowed) {
             return response()->json([
                 'success' => false,
-                'message' => 'Hanya admin/staff yang dapat mencari penjualan.',
+                'message' => 'Hanya admin dan storage-staff yang dapat mencari penjualan.',
             ], 403);
         }
 

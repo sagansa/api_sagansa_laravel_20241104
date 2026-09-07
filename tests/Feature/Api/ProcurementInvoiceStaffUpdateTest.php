@@ -75,7 +75,7 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
     public function test_can_set_sales_order_link_on_update(): void
     {
-        Sanctum::actingAs($this->userWithRole('staff'));
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
         $invoice = $this->makeInvoice();
         $order = \Illuminate\Support\Facades\DB::table('sales_orders')->first();
         if (!$order) {
@@ -92,7 +92,7 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
     public function test_can_clear_sales_order_link_with_empty_string(): void
     {
-        Sanctum::actingAs($this->userWithRole('staff'));
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
         $order = \Illuminate\Support\Facades\DB::table('sales_orders')->first();
         if (!$order) {
             $this->markTestSkipped('Need at least 1 sales order in database');
@@ -109,7 +109,7 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
     public function test_invalid_sales_order_id_returns_422(): void
     {
-        Sanctum::actingAs($this->userWithRole('staff'));
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
         $invoice = $this->makeInvoice();
 
         $res = $this->putJson("/procurement/invoices/{$invoice->id}", [
@@ -121,7 +121,7 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
     public function test_non_numeric_sales_order_id_returns_422_and_keeps_null(): void
     {
-        Sanctum::actingAs($this->userWithRole('staff'));
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
         $invoice = $this->makeInvoice();
 
         $res = $this->putJson("/procurement/invoices/{$invoice->id}", [
@@ -190,7 +190,7 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
     public function test_link_candidates_search_by_receipt_no(): void
     {
-        Sanctum::actingAs($this->userWithRole('staff'));
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
         $order = \Illuminate\Support\Facades\DB::table('sales_orders')
             ->whereNotNull('receipt_no')->first();
         if (!$order) {
@@ -206,7 +206,7 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
     public function test_link_candidates_search_by_id(): void
     {
-        Sanctum::actingAs($this->userWithRole('staff'));
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
         $order = \Illuminate\Support\Facades\DB::table('sales_orders')->first();
         if (!$order) {
             $this->markTestSkipped('Need at least 1 sales order');
@@ -228,7 +228,7 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
     public function test_link_candidates_lists_recent_online_shop_orders(): void
     {
-        Sanctum::actingAs($this->userWithRole('staff'));
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
 
         $db = \Illuminate\Support\Facades\DB::table('sales_orders');
         $recentId = $db->insertGetId([
@@ -321,5 +321,42 @@ class ProcurementInvoiceStaffUpdateTest extends TestCase
 
         $res->assertStatus(422);
         $this->assertSame('images/InvoicePurchase/old.webp', $invoice->fresh()->image);
+    }
+
+    public function test_staff_cannot_change_sales_order_link(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+        $invoice = $this->makeInvoice();
+
+        $res = $this->putJson("/procurement/invoices/{$invoice->id}", [
+            'sales_order_id' => 1,
+        ]);
+
+        $res->assertStatus(403);
+        $this->assertNull($invoice->fresh()->sales_order_id);
+    }
+
+    public function test_staff_forbidden_link_candidates(): void
+    {
+        Sanctum::actingAs($this->userWithRole('staff'));
+
+        $this->getJson('/sales-orders/link-candidates?q=x')->assertStatus(403);
+    }
+
+    public function test_admin_can_set_sales_order_link(): void
+    {
+        Sanctum::actingAs($this->userWithRole('admin'));
+        $invoice = $this->makeInvoice();
+        $order = \Illuminate\Support\Facades\DB::table('sales_orders')->first();
+        if (!$order) {
+            $this->markTestSkipped('Need at least 1 sales order in database');
+        }
+
+        $res = $this->putJson("/procurement/invoices/{$invoice->id}", [
+            'sales_order_id' => $order->id,
+        ]);
+
+        $res->assertOk();
+        $this->assertEquals($order->id, $invoice->fresh()->sales_order_id);
     }
 }
