@@ -330,8 +330,9 @@ class ProcurementController extends Controller
 
     /**
      * Kandidat invoice pembelian untuk dikaitkan dari sisi penjualan
-     * (kartu di detail penjualan direct): hanya invoice DRAFT dan BELUM
-     * terkait order lain. Guard sama dengan perubahan kaitan:
+     * (kartu di detail penjualan direct): invoice yang SUDAH DIBAYAR (payment_status: 2)
+     * dan BELUM terkait order lain. Mendukung opsional param ?payment_status
+     * (default '2'). Guard sama dengan perubahan kaitan:
      * admin/super_admin + storage-staff.
      */
     public function invoiceLinkCandidates(Request $request)
@@ -348,19 +349,28 @@ class ProcurementController extends Controller
         }
 
         $q = trim((string) $request->query('q', ''));
+        $paymentStatus = (string) $request->query('payment_status', '2');
 
         $query = InvoicePurchase::query()
             ->leftJoin('suppliers', 'suppliers.id', '=', 'invoice_purchases.supplier_id')
-            ->where('invoice_purchases.payment_status', '1')
-            ->whereNull('invoice_purchases.sales_order_id')
-            ->select(
-                'invoice_purchases.id',
-                'invoice_purchases.total_price',
-                'invoice_purchases.payment_status',
-                'invoice_purchases.order_status',
-                'invoice_purchases.date',
-                'suppliers.name as supplier_name'
-            );
+            ->whereNull('invoice_purchases.sales_order_id');
+
+        if ($paymentStatus === 'all') {
+            // Tanpa filter payment_status
+        } elseif (str_contains($paymentStatus, ',')) {
+            $query->whereIn('invoice_purchases.payment_status', explode(',', $paymentStatus));
+        } else {
+            $query->where('invoice_purchases.payment_status', $paymentStatus);
+        }
+
+        $query->select(
+            'invoice_purchases.id',
+            'invoice_purchases.total_price',
+            'invoice_purchases.payment_status',
+            'invoice_purchases.order_status',
+            'invoice_purchases.date',
+            'suppliers.name as supplier_name'
+        );
 
         if ($q !== '') {
             $query->where(function ($sub) use ($q) {
@@ -669,15 +679,6 @@ class ProcurementController extends Controller
             ], 404);
         }
 
-        // Loose comparison (!=) bukan strict (!==): nilai payment_status bisa
-        // string '1' atau int 1 tergantung write path. Lihat InvoicePurchase::$casts.
-        if ($invoice->payment_status != '1') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Hanya invoice draft yang dapat diedit.'
-            ], 400);
-        }
-
         $isAdmin = $user->hasRole('admin') || $user->hasRole('super_admin');
         $isStaff = $user->hasRole('staff');
         $isStorageStaff = $user->hasRole('storage-staff');
@@ -696,6 +697,16 @@ class ProcurementController extends Controller
         $onlySalesLink = $request->has('sales_order_id') &&
             !$request->hasAny(['supplier_id', 'payment_type_id', 'taxes',
                 'discounts', 'notes', 'image', 'items']);
+
+        // Edit penuh (items, harga, supplier, diskon, pajak, catatan, dll.)
+        // hanya boleh untuk invoice draft. Kaitan penjualan (sales_order_id)
+        // boleh diubah untuk invoice yang sudah dibayar (payment_status 2).
+        if (!$onlySalesLink && $invoice->payment_status != '1') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya invoice draft yang dapat diedit.'
+            ], 400);
+        }
 
         if (!$isAdmin && !$isStaff && !$isStorageStaff && !$onlySalesLink &&
             $invoice->created_by_id != $user->id) {

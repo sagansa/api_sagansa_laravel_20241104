@@ -112,28 +112,36 @@ class PurchaseInvoiceSalesLinkTest extends TestCase
             ->assertStatus(403);
     }
 
-    public function test_invoice_link_candidates_only_draft_and_unlinked(): void
+    public function test_invoice_link_candidates_defaults_to_paid_and_unlinked(): void
     {
         Sanctum::actingAs($this->userWithRole('storage-staff'));
         $orderId = $this->makeSalesOrder();
 
         try {
-            $draftUnlinked = $this->makeInvoice();
-            $linked = $this->makeInvoice(['sales_order_id' => $orderId]);
-            $this->makeInvoice(['payment_status' => '2']); // unlinked tapi dibayar
+            $paidUnlinked = $this->makeInvoice(['payment_status' => '2']);
+            $paidLinked = $this->makeInvoice(['payment_status' => '2', 'sales_order_id' => $orderId]);
+            $draftUnlinked = $this->makeInvoice(['payment_status' => '1']);
 
             $res = $this->getJson('/procurement/invoices/link-candidates');
 
             $res->assertOk();
             $ids = array_column($res->json('data'), 'id');
-            $this->assertContains($draftUnlinked->id, $ids);
-            $this->assertNotContains($linked->id, $ids);
+            $this->assertContains($paidUnlinked->id, $ids);
+            $this->assertNotContains($paidLinked->id, $ids);
+            $this->assertNotContains($draftUnlinked->id, $ids);
             foreach ($res->json('data') as $row) {
-                $this->assertSame('1', (string) $row['payment_status']);
+                $this->assertSame('2', (string) $row['payment_status']);
             }
+
+            // Bisa mencari draft jika secara eksplisit meminta ?payment_status=1
+            $resDraft = $this->getJson('/procurement/invoices/link-candidates?payment_status=1');
+            $resDraft->assertOk();
+            $draftIds = array_column($resDraft->json('data'), 'id');
+            $this->assertContains($draftUnlinked->id, $draftIds);
+            $this->assertNotContains($paidUnlinked->id, $draftIds);
         } finally {
             \App\Models\InvoicePurchase::whereIn('id', [
-                $draftUnlinked->id ?? 0, $linked->id ?? 0,
+                $paidUnlinked->id ?? 0, $paidLinked->id ?? 0, $draftUnlinked->id ?? 0,
             ])->orWhere('sales_order_id', $orderId)->delete();
             \Illuminate\Support\Facades\DB::table('sales_orders')->where('id', $orderId)->delete();
         }
@@ -151,7 +159,10 @@ class PurchaseInvoiceSalesLinkTest extends TestCase
         ]);
 
         try {
-            $invoice = $this->makeInvoice(['supplier_id' => $supplierId]);
+            $invoice = $this->makeInvoice([
+                'supplier_id' => $supplierId,
+                'payment_status' => '2',
+            ]);
 
             $res = $this->getJson('/procurement/invoices/link-candidates?q=' . urlencode('Kandidat Unik'));
 
@@ -167,7 +178,7 @@ class PurchaseInvoiceSalesLinkTest extends TestCase
     public function test_invoice_link_candidates_search_by_id(): void
     {
         Sanctum::actingAs($this->userWithRole('storage-staff'));
-        $invoice = $this->makeInvoice();
+        $invoice = $this->makeInvoice(['payment_status' => '2']);
 
         try {
             $res = $this->getJson("/procurement/invoices/link-candidates?q={$invoice->id}");
@@ -177,6 +188,53 @@ class PurchaseInvoiceSalesLinkTest extends TestCase
             $this->assertContains($invoice->id, $ids);
         } finally {
             $invoice->delete();
+        }
+    }
+
+    public function test_storage_staff_can_link_and_unlink_paid_invoice(): void
+    {
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
+        $orderId = $this->makeSalesOrder();
+        $invoice = $this->makeInvoice(['payment_status' => '2']);
+
+        try {
+            // Link ke sales order
+            $res = $this->putJson("/procurement/invoices/{$invoice->id}", [
+                'sales_order_id' => $orderId,
+            ]);
+            $res->assertOk();
+            $this->assertEquals($orderId, $invoice->fresh()->sales_order_id);
+            $this->assertSame('2', $invoice->fresh()->payment_status);
+
+            // Unlink dari sales order
+            $resUnlink = $this->putJson("/procurement/invoices/{$invoice->id}", [
+                'sales_order_id' => '',
+            ]);
+            $resUnlink->assertOk();
+            $this->assertNull($invoice->fresh()->sales_order_id);
+        } finally {
+            $invoice->delete();
+            \Illuminate\Support\Facades\DB::table('sales_orders')->where('id', $orderId)->delete();
+        }
+    }
+
+    public function test_full_edit_on_paid_invoice_is_still_rejected(): void
+    {
+        Sanctum::actingAs($this->userWithRole('storage-staff'));
+        $orderId = $this->makeSalesOrder();
+        $invoice = $this->makeInvoice(['payment_status' => '2']);
+
+        try {
+            // Mengubah sales_order_id + field lain (notes) dianggap edit penuh → ditolak 400
+            $res = $this->putJson("/procurement/invoices/{$invoice->id}", [
+                'sales_order_id' => $orderId,
+                'notes' => 'Catatan baru',
+            ]);
+            $res->assertStatus(400);
+            $res->assertJson(['message' => 'Hanya invoice draft yang dapat diedit.']);
+        } finally {
+            $invoice->delete();
+            \Illuminate\Support\Facades\DB::table('sales_orders')->where('id', $orderId)->delete();
         }
     }
 }
